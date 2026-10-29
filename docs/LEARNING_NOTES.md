@@ -75,3 +75,47 @@ This document tracks everything built in each milestone, explaining how it works
 
 #### Q3: Why did we remove `SYSTEM_ALERT_WINDOW` permission from the AndroidManifest?
 > **Answer:** `SYSTEM_ALERT_WINDOW` allows an app to draw an overlay (popup) on top of all other apps. We do not need this because our app only sends notifications, not overlays. Keeping unnecessary permissions is a security risk and may cause Google Play to reject the app.
+
+
+---
+
+## Milestone M2: App Picker, Time Limit Setter, and AsyncStorage
+
+### What We Built
+
+1. **A `<queries>` entry for launcher apps** in `AndroidManifest.xml`:
+   - Added an intent for `ACTION_MAIN` + `CATEGORY_LAUNCHER` so Android lets us ask "which apps show on the home screen?"
+   - This does NOT need the dangerous `QUERY_ALL_PACKAGES` permission.
+
+2. **A local Expo Module** (`modules/app-list-reader/`):
+   - Kotlin file (`AppListReaderModule.kt`) that talks to Android's `PackageManager` to fetch launchable apps.
+   - Each app returns its name, package name, and icon (as a Base64 PNG string).
+   - JavaScript side (`index.ts`) exposes one function: `getInstalledApps()`.
+
+3. **AsyncStorage** for saving data:
+   - Installed `@react-native-async-storage/async-storage`.
+   - Monitored apps are saved to the phone's local storage so the list survives app restarts.
+
+4. **Full App.js rewrite** with two modals:
+   - **App Picker Modal**: Shows all installed apps with icons and a search bar. Slides up when user taps "+ Add App to Monitor".
+   - **Time Limit Modal**: After picking an app, the user picks a time limit (15 min → 3 hours) and types a personal notification message.
+   - **Home screen cards**: Each monitored app shows as a card with icon, name, limit, message, and a delete button.
+
+### How It Works (Simple Explanation)
+
+- **PackageManager**: Android's built-in directory of all installed apps. We ask it "show me all apps with a LAUNCHER icon" — that is every app visible on the home screen.
+- **Base64**: A way to turn an image (binary data) into plain text so we can send it from Kotlin to JavaScript. JavaScript turns it back into an image using `data:image/png;base64,...`.
+- **AsyncStorage**: Like `localStorage` in web browsers but for React Native. It stores key-value pairs as strings on the phone's disk. We store the monitored apps list as a JSON string.
+- **React Native Modal**: A full-screen component that slides over the current screen. We use `animationType="slide"` so it slides up from the bottom — feels natural on mobile.
+- **Local Expo Module**: A small native (Kotlin) plugin we write ourselves. Expo's module system connects it to JavaScript automatically without us having to edit `MainApplication.kt` by hand.
+
+### Interview Questions & Answers
+
+#### Q1: Why do you use a local Expo module instead of a third-party library to list installed apps?
+> **Answer:** Third-party libraries for listing apps often request `QUERY_ALL_PACKAGES`, which is a restricted permission that Google Play may reject unless we justify it. By writing our own small Kotlin module and declaring a `<queries>` block in the manifest with only the `LAUNCHER` intent, we get exactly the apps we need (home screen apps) without the dangerous permission. It also means fewer dependencies, which keeps the app smaller and easier to maintain.
+
+#### Q2: What is `AsyncStorage` and how does it differ from a database?
+> **Answer:** `AsyncStorage` is a simple key-value store built into React Native. You save a string under a key, and read it back later. It is good for small amounts of data like user settings or a short list of items. A database (like SQLite) is better for large amounts of structured data with relationships. For our app, `AsyncStorage` is enough because we store just a few monitored app records as a JSON string.
+
+#### Q3: What is the React Native `Modal` component and why did we use it instead of a navigation library?
+> **Answer:** `Modal` is a built-in React Native component that renders a full-screen overlay on top of everything else. We chose it over a navigation library (like React Navigation) because our app only has one real screen so far — adding a navigation library would be extra complexity that Deepak would need to explain in an interview. Using `Modal` keeps all code in one file (`App.js`), making it very easy to read and understand step by step.
