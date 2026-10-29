@@ -16,7 +16,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.deepak.mindfulreminder"
+      "package": "com.deepak.apptimenotifier"
     },
     "web": {
       "favicon": "./assets/favicon.png"
