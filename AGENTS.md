@@ -1,4 +1,4 @@
-# AGENTS.md — Rules for the AI coding agent (Mindful Reminder app)
+# AGENTS.md — Rules for the AI coding agent (App Time Notifier app)
 
 Read this file first. Then read `docs/PROJECT_BRIEF.md` (the full plan, decisions, and history).
 
@@ -16,7 +16,7 @@ Read this file first. Then read `docs/PROJECT_BRIEF.md` (the full plan, decision
 - Ask before big decisions. Do not change the plan silently.
 
 ## The project in 5 lines
-- Android-only app. Name: "Mindful Reminder".
+- Android-only app. Name: "App Time Notifier".
 - The user picks a distracting app (for example Instagram) and a time limit.
 - When the limit is reached, the app sends a **notification** with the user's own message and a photo of a loved one.
 - The app does **not** block anything.

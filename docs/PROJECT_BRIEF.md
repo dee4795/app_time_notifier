@@ -1,4 +1,4 @@
-# Project Brief — "Mindful Reminder"
+# Project Brief — "App Time Notifier"
 
 Last updated: October 2026
 Status: **Setup and Milestone M0 initialized.**
@@ -32,7 +32,7 @@ The app is free for 1 monitored app. More apps and extra features need a paid up
 
 ## 4. Product definition
 
-- **App Name:** Mindful Reminder (DECIDED)
+- **App Name:** App Time Notifier (DECIDED)
 - **Package Name:** `com.deepak.mindfulreminder` (DECIDED)
 - **Core idea:** User picks apps to watch + time limit. When reached, receives a notification with custom text & loved one's photo.
 - **Free vs Paid:** Free = 1 app forever; Paid = unlimited apps + extra features.

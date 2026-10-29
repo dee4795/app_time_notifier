@@ -1,4 +1,4 @@
-# AGENTS.md — Rules for the AI coding agent (Mindful Reminder app)
+# AGENTS.md — Rules for the AI coding agent (App Time Notifier app)
 
 Read this file first. Then read `docs/PROJECT_BRIEF.md`.
 
