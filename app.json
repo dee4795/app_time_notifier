@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "focus-reminder",
-    "slug": "focus-reminder",
+    "name": "Mindful Reminder",
+    "slug": "mindful-reminder",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,7 +15,8 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.deepak.mindfulreminder"
     },
     "web": {
       "favicon": "./assets/favicon.png"
