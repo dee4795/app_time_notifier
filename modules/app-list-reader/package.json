@@ -4,3 +4,4 @@
   "description": "Local native module that reads the list of installed apps on Android",
   "main": "index.ts"
 }
+
