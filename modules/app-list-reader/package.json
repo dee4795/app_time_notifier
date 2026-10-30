@@ -1,0 +1,6 @@
+{
+  "name": "app-list-reader",
+  "version": "1.0.0",
+  "description": "Local native module that reads the list of installed apps on Android",
+  "main": "index.ts"
+}

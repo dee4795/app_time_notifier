@@ -1,10 +1,11 @@
 // index.ts — JavaScript side of our native module
 // This is what App.js calls. It talks to the Kotlin code underneath.
 
-import { NativeModulesProxy } from 'expo-modules-core';
+// requireNativeModule finds the native module by its Name("AppListReader") string
+// This is the correct way for Expo SDK 45+ modules
+import { requireNativeModule } from 'expo-modules-core';
 
-// This grabs our native module by name
-const AppListReaderModule = NativeModulesProxy.AppListReader;
+const AppListReaderModule = requireNativeModule('AppListReader');
 
 // InstalledApp is the shape of data we get back for each app
 export interface InstalledApp {

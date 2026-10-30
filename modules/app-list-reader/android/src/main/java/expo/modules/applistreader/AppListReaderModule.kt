@@ -16,10 +16,10 @@ import java.io.ByteArrayOutputStream
 class AppListReaderModule : Module() {
 
   override fun definition() = ModuleDefinition {
-    // This name must match what we use in index.ts: NativeModulesProxy.AppListReader
+    // "AppListReader" is the name JavaScript uses to find this module
     Name("AppListReader")
 
-    // Define the function JS can call
+    // Define the async function JS can call
     AsyncFunction("getInstalledApps") {
       getInstalledApps()
     }
@@ -45,6 +45,7 @@ class AppListReaderModule : Module() {
       val packageName = resolveInfo.activityInfo.packageName
 
       // Convert the app icon to a Base64 string so we can send it to JavaScript
+      // Base64 = a way to turn binary image data into text so it can travel as a string
       val iconBase64 = try {
         val drawable = resolveInfo.loadIcon(pm)
         drawableToBase64(drawable)
@@ -62,7 +63,6 @@ class AppListReaderModule : Module() {
   }
 
   // Helper: converts an Android Drawable (icon) to a Base64-encoded PNG string
-  // Base64 is a way to turn binary image data into a text string
   private fun drawableToBase64(drawable: Drawable): String {
     val bitmap = Bitmap.createBitmap(
       drawable.intrinsicWidth.coerceAtLeast(1),
@@ -74,8 +74,9 @@ class AppListReaderModule : Module() {
     drawable.draw(canvas)
 
     val outputStream = ByteArrayOutputStream()
-    // Compress to PNG with no quality loss (100%)
+    // PNG with 100% quality — no data loss
     bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
     return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
   }
 }
+
