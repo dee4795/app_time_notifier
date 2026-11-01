@@ -43,3 +43,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# generated local Expo module outputs
+**/.gradle/
+**/build/
+
+# generated project snapshot
+/repomix-output.xml

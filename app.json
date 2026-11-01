@@ -16,7 +16,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.deepak.apptimenotifier"
+      "package": "com.deepak.apptimenotifier",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.PACKAGE_USAGE_STATS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

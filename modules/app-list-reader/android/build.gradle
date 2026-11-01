@@ -1,0 +1,18 @@
+// build.gradle — tells Android's build system "this folder is a library".
+// Without this file, Expo autolinking skips the module and JavaScript
+// cannot find it. (That is why "app list reader is not part of this build".)
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.applistreader'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.applistreader"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
