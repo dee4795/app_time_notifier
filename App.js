@@ -14,16 +14,21 @@
 //  5. Reads how long each monitored app was used today (Usage access).
 //  6. Explains Usage access first (required disclosure), then opens Settings.
 //  7. Cards show "Used today" with a smooth progress bar.
+//
+// M4 changes (reminders):
+//  8. A background watcher (Kotlin service) checks usage about every 30 seconds.
+//  9. When a limit is reached it shows YOUR message + photo as a notification.
+// 10. "Send test reminder" button on each card, notification permission banner.
 
 import { StatusBar } from 'expo-status-bar';
 import {
   StyleSheet, Text, View, Pressable, ScrollView, Modal, FlatList,
-  TextInput, ActivityIndicator, Alert, Image, Animated, Easing, LayoutAnimation, AppState,
+  TextInput, ActivityIndicator, Alert, Image, Animated, Easing, LayoutAnimation, AppState, PermissionsAndroid, Platform, Linking,
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
-import { File, Paths } from 'expo-file-system';
+import { File } from 'expo-file-system';
 // Why this library: the built-in SafeAreaView does nothing on Android.
 // This one gives us the real size of the notch / status bar / nav bar.
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +43,8 @@ try {
 const nativeGetInstalledApps = nativeModule ? nativeModule.getInstalledApps : null;
 // true only if this build already contains the new usage functions
 const hasNativeUsage = !!nativeModule && typeof nativeModule.hasUsageAccess === 'function';
+// true only if this build already contains the reminder / watcher functions
+const hasNativeNotify = !!nativeModule && typeof nativeModule.startWatching === 'function';
 
 // ── Quick buttons for common limits. The user can still type any value. ──
 const QUICK_LIMITS = [
@@ -210,7 +217,11 @@ function ModalShell({ visible, onClose, title, left, children }) {
 
 // Deletes a photo file we copied earlier. If it is already gone, that is fine.
 const deleteFileQuietly = (uri) => {
-  try { if (uri) new File(uri).delete(); } catch (_) { /* nothing to delete */ }
+  try {
+    if (!uri) return;
+    if (nativeModule && typeof nativeModule.deletePhoto === 'function') nativeModule.deletePhoto(uri);
+    else new File(uri).delete();   // old build without the photo functions
+  } catch (_) { /* nothing to delete */ }
 };
 
 // Keep only digits and at most 2 characters (so "99" is the biggest).
@@ -243,6 +254,8 @@ function MainScreen() {
   const [hasAccess, setHasAccess] = useState(null);   // Usage access: null = not checked yet
   const [usage, setUsage] = useState({});             // { packageName: minutes used today }
   const [isAccessOpen, setIsAccessOpen] = useState(false);
+  const [notifOk, setNotifOk] = useState(null);       // notifications allowed? null = not checked yet
+  const [loaded, setLoaded] = useState(false);        // true after saved apps are read from the phone
 
   useEffect(() => { loadSaved(); }, []);
 
@@ -251,6 +264,7 @@ function MainScreen() {
       const json = await AsyncStorage.getItem(STORAGE_KEY);
       if (json) setMonitoredApps(JSON.parse(json));
     } catch (e) { console.error(e); }
+    finally { setLoaded(true); }
   };
 
   const saveAll = async (list) => {
@@ -267,6 +281,7 @@ function MainScreen() {
         console.log('[usage] access =', ok, '|', nativeModule.getUsageAccessDebug());
       }
       setHasAccess(ok);
+      if (hasNativeNotify) setNotifOk(nativeModule.areNotificationsEnabled());
       if (ok && list.length > 0) {
         const result = await nativeModule.getTodayUsageMinutes(list.map(a => a.packageName));
         setUsage(result);
@@ -291,6 +306,70 @@ function MainScreen() {
     const timer = setInterval(() => refreshUsage(monitoredApps), 30000);
     return () => { sub.remove(); clearInterval(timer); clearTimeout(lateCheck); };
   }, [monitoredApps]);
+
+  // ── Keep the background watcher in step with the list of apps ──
+  // Every time the list changes we give the Kotlin side a fresh copy
+  // (it works even when this screen is closed), then start or stop the watcher.
+  useEffect(() => {
+    if (!hasNativeNotify || !loaded || hasAccess === null) return;
+    try {
+      const items = monitoredApps.map(a => ({
+        appName: a.appName,
+        packageName: a.packageName,
+        limitMinutes: a.limitMinutes,
+        message: a.message,
+        photoUri: a.photoUri || null,
+      }));
+      // index.ts turns the list into text by itself, so we pass the list as it is
+      nativeModule.saveWatchList(items);
+      console.log('[watch] saved', items.length, 'app(s); usage access =', hasAccess);
+      if (items.length > 0 && hasAccess) nativeModule.startWatching();
+      else nativeModule.stopWatching();
+    } catch (e) {
+      console.warn('Watcher sync failed:', e);
+    }
+  }, [monitoredApps, hasAccess, loaded]);
+
+  // ── Notification permission (Android 13 and newer shows its own pop-up) ──
+  const askNotifPermission = async () => {
+    try {
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+      }
+      // Ask Android for the real answer (the user may also have turned the channel off)
+      const enabled = nativeModule.areNotificationsEnabled();
+      setNotifOk(enabled);
+      return enabled;
+    } catch (e) {
+      console.warn('Notification permission failed:', e);
+      return false;
+    }
+  };
+
+  // ── Show the reminder now, so the user sees how it will look ──
+  const onTestReminder = async (app) => {
+    try {
+      const allowed = await askNotifPermission();
+      if (!allowed) {
+        Alert.alert(
+          'Notifications are off',
+          'Please allow notifications for App Time Notifier in Settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+      const result = nativeModule.showTestNotification(app.packageName);
+      // New Kotlin code answers "ok" or a sentence; the older one answered true/false
+      if (result !== 'ok' && result !== true) {
+        Alert.alert('Could not show it', result === false ? 'Please try again in a moment.' : String(result));
+      }
+    } catch (e) {
+      console.warn('Test reminder failed:', e);
+    }
+  };
 
   // ── Open Android Settings where the user turns on Usage access ──
   const goToAccessSettings = () => {
@@ -354,15 +433,14 @@ function MainScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.7,
+        quality: 0.8,
       });
       if (result.canceled) return;
 
-      const source = new File(result.assets[0].uri);
-      const copy = new File(Paths.document, `photo_${Date.now()}.jpg`);
-      source.copy(copy);
+      // Our Kotlin code makes the private, smaller copy and gives us its address
+      const saved = await nativeModule.savePhoto(result.assets[0].uri);
       deleteFileQuietly(photoUri); // remove the previous copy, if there was one
-      setPhotoUri(copy.uri);
+      setPhotoUri(saved);
     } catch (e) {
       console.warn('Photo pick failed:', e);
       Alert.alert('Photo problem', 'Could not add the photo. Please try another one.');
@@ -403,6 +481,8 @@ function MainScreen() {
     setIsLimitOpen(false);
     setSelectedApp(null);
     refreshUsage(updated);
+    // Ask for notification permission (Android shows its own pop-up if needed)
+    if (hasNativeNotify) await askNotifPermission();
     // First time: explain "Usage access" before sending the user to Settings.
     if (hasNativeUsage && hasAccess === false) {
       setTimeout(() => setIsAccessOpen(true), 400);
@@ -415,7 +495,7 @@ function MainScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove', style: 'destructive', onPress: async () => {
-          try { if (app.photoUri) new File(app.photoUri).delete(); } catch (_) { /* already gone */ }
+          deleteFileQuietly(app.photoUri);
           const updated = monitoredApps.filter(a => a.packageName !== app.packageName);
           // Makes the remaining cards slide smoothly into place.
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -477,6 +557,19 @@ function MainScreen() {
                 </View>
               </FadeInUp>
             )}
+            {notifOk === false && (
+              <FadeInUp style={s.banner}>
+                <Text style={s.bannerTitle}>Allow notifications</Text>
+                <Text style={s.bannerText}>
+                  We need them to send your reminder when a limit is reached.
+                </Text>
+                <View style={s.bannerBtns}>
+                  <PressScale onPress={() => Linking.openSettings()} style={s.bannerBtn}>
+                    <Text style={s.bannerBtnTxt}>Open settings</Text>
+                  </PressScale>
+                </View>
+              </FadeInUp>
+            )}
             <Text style={s.sectionLabel}>
               {monitoredApps.length === 1 ? '1 app watched' : `${monitoredApps.length} apps watched`}
             </Text>
@@ -514,10 +607,17 @@ function MainScreen() {
                     <Image source={{ uri: app.photoUri }} style={s.cardPhoto} />
                   ) : null}
                 </View>
+
+                {hasNativeNotify ? (
+                  <PressScale wrapStyle={s.stretch} style={s.testBtn} onPress={() => onTestReminder(app)}>
+                    <Text style={s.testBtnTxt}>🔔  Send test reminder</Text>
+                  </PressScale>
+                ) : null}
               </FadeInUp>
             ))}
             <Text style={s.note}>
-              Background tracking and notifications are coming in the next update.
+              While watching, Android shows a small "Watching your app limits" notice.
+              That is how it lets us check your usage in the background.
             </Text>
           </>
         )}
@@ -572,7 +672,7 @@ function MainScreen() {
 
       {/* ══════════ TIME LIMIT + MESSAGE + PHOTO ══════════ */}
       <ModalShell
-        visible={isLimitOpen} onClose={() => setIsLimitOpen(false)}
+        visible={isLimitOpen} onClose={() => { deleteFileQuietly(photoUri); setPhotoUri(null); setIsLimitOpen(false); }}
         title={selectedApp ? selectedApp.appName : ''}
         left={selectedApp ? <View style={s.hdrIcon}><AppIcon icon={selectedApp.icon} size={30} /></View> : null}
       >
@@ -653,7 +753,7 @@ function MainScreen() {
               <Image
                 key={photoUri} source={{ uri: photoUri }} style={s.photoPreview}
                 resizeMode="cover" fadeDuration={0}
-                onError={(e) => console.warn('Photo preview failed:', e.nativeEvent)}
+                onError={(e) => console.warn('Photo preview failed:', JSON.stringify(e.nativeEvent), photoUri)}
               />
               {/* The two buttons sit on the photo, at the bottom */}
               <View style={s.photoBtns}>
@@ -695,7 +795,9 @@ function MainScreen() {
           </View>
           <Text style={s.accessSteps}>
             On the next screen, find App Time Notifier and turn on "Allow usage access".
-            Then come back to this app.
+            Then come back to this app.{'\n\n'}
+            If the switch already shows ON but this app still asks, switch it OFF and
+            then ON again. Some phones keep an old state.
           </Text>
           <PressScale wrapStyle={s.stretch} style={s.saveBtn} onPress={goToAccessSettings}>
             <Text style={s.saveBtnTxt}>Continue to Settings</Text>
@@ -817,6 +919,10 @@ const s = StyleSheet.create({
   barTrack: { height: 8, borderRadius: 4, backgroundColor: C.surface2, overflow: 'hidden' },
   barFill: { height: 8, borderRadius: 4, backgroundColor: C.mint },
   barFillFull: { backgroundColor: C.softRed },
+
+  // Test reminder button on cards
+  testBtn: { marginTop: 12, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 10, alignItems: 'center' },
+  testBtnTxt: { color: C.mint, fontSize: 13, fontWeight: '700' },
 
   // Banner (usage access is off)
   banner: { backgroundColor: C.mintTint, borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: C.mint },

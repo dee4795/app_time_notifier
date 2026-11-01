@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- For the background watcher (a "foreground service" with a small
+       permanent notification) and for restarting it after the phone restarts. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
   <!-- Lets our app SEE apps that have a home screen icon (Android 11 and newer).
        This is NOT the restricted QUERY_ALL_PACKAGES permission.
        It lives inside the module, so it survives a clean prebuild. -->
@@ -8,4 +15,24 @@
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
   </queries>
+
+  <application>
+    <service
+        android:name="expo.modules.applistreader.UsageWatchService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Checks how long the user's chosen apps were used today and sends a reminder when the daily limit set by the user is reached." />
+    </service>
+
+    <receiver
+        android:name="expo.modules.applistreader.BootReceiver"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+  </application>
 </manifest>
