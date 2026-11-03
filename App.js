@@ -63,7 +63,9 @@ const MESSAGE_IDEAS = [
 ];
 
 const STORAGE_KEY = 'monitored_apps_v1';
-const BATTERY_HINT_KEY = 'battery_hint_v1';   // saved once the user taps "Got it"
+const BATTERY_HINT_KEY = 'battery_hint_v1';
+const PRO_KEY = 'is_pro_v1';       // "yes" when Pro is on (real payment comes later)
+const FREE_APP_LIMIT = 1;          // the free plan watches this many apps   // saved once the user taps "Got it"
 
 // ── Calm colour palette (all colours live here, so changing the look is easy) ──
 const C = {
@@ -258,6 +260,8 @@ function MainScreen() {
   const [notifOk, setNotifOk] = useState(null);       // notifications allowed? null = not checked yet
   const [loaded, setLoaded] = useState(false);        // true after saved apps are read from the phone
   const [batteryHintDone, setBatteryHintDone] = useState(true);  // true = do not show the battery tip
+  const [isPro, setIsPro] = useState(false);                      // free plan until Pro is bought
+  const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
 
   useEffect(() => { loadSaved(); }, []);
 
@@ -268,6 +272,7 @@ function MainScreen() {
       // Show the battery tip until the user has tapped "Got it" once
       const hint = await AsyncStorage.getItem(BATTERY_HINT_KEY);
       setBatteryHintDone(hint === 'done');
+      setIsPro((await AsyncStorage.getItem(PRO_KEY)) === 'yes');
     } catch (e) { console.error(e); }
     finally { setLoaded(true); }
   };
@@ -374,6 +379,24 @@ function MainScreen() {
     } catch (e) {
       console.warn('Test reminder failed:', e);
     }
+  };
+
+  // ── Free plan: the free version watches only FREE_APP_LIMIT apps ──
+  const onAddPressed = () => {
+    if (!isPro && monitoredApps.length >= FREE_APP_LIMIT) {
+      setIsUpgradeOpen(true);   // show the upgrade screen instead of the app list
+      return;
+    }
+    openPicker();
+  };
+
+  // Testing only: lets us try both plans without payment. The button that
+  // calls this is shown only in development builds (see __DEV__ below).
+  const toggleProForTesting = async () => {
+    const next = !isPro;
+    setIsPro(next);
+    try { await AsyncStorage.setItem(PRO_KEY, next ? 'yes' : 'no'); } catch (_) { /* not important */ }
+    if (next) setIsUpgradeOpen(false);
   };
 
   // ── Battery tip: some phones stop background apps to save battery ──
@@ -541,6 +564,17 @@ function MainScreen() {
       <FadeInUp style={[s.header, { paddingTop: insets.top + 18 }]}>
         <Text style={s.title}>App Time Notifier</Text>
         <Text style={s.subtitle}>Gentle reminders, right when you need them</Text>
+        {/* In development builds the pill always opens the upgrade screen, so testers can reach the Pro switch */}
+        <PressScale
+          wrapStyle={s.pillWrap} style={[s.planPill, isPro && s.planPillPro]}
+          onPress={() => { if (!isPro || __DEV__) setIsUpgradeOpen(true); }}
+        >
+          <Text style={[s.planPillTxt, isPro && s.planPillProTxt]}>
+            {isPro
+              ? 'Pro · unlimited apps'
+              : `Free · ${monitoredApps.length} of ${FREE_APP_LIMIT} app used`}
+          </Text>
+        </PressScale>
       </FadeInUp>
 
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
@@ -659,7 +693,7 @@ function MainScreen() {
 
       {/* ── Add button stays at the bottom, above the navigation bar ── */}
       <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
-        <PressScale onPress={openPicker} style={s.addBtn}>
+        <PressScale onPress={onAddPressed} style={s.addBtn}>
           <Text style={s.addBtnTxt}>+  Add App to Monitor</Text>
         </PressScale>
       </View>
@@ -815,6 +849,33 @@ function MainScreen() {
         </ScrollView>
       </ModalShell>
 
+      {/* ══════════ UPGRADE TO PRO ══════════ */}
+      <ModalShell visible={isUpgradeOpen} onClose={() => setIsUpgradeOpen(false)} title="Upgrade to Pro">
+        <ScrollView style={s.limitScroll} contentContainerStyle={s.accessWrap}>
+          <View style={s.emptyCircle}><Text style={s.emptyEmoji}>✨</Text></View>
+          <Text style={s.accessTitle}>Watch more apps</Text>
+          <View style={s.accessQuote}>
+            <Text style={s.accessText}>
+              The free plan watches {FREE_APP_LIMIT} app. Pro lets you watch as many apps as you
+              like, each with its own limit, message and photo.
+            </Text>
+          </View>
+          <Text style={s.accessSteps}>
+            Payments are not set up yet. Pro will be available when App Time Notifier is on Google Play.
+          </Text>
+          {__DEV__ ? (
+            <PressScale wrapStyle={s.stretch} style={s.devBtn} onPress={toggleProForTesting}>
+              <Text style={s.devBtnTxt}>
+                Developer only: {isPro ? 'turn Pro off' : 'turn Pro on'} (testing)
+              </Text>
+            </PressScale>
+          ) : null}
+          <PressScale wrapStyle={s.stretch} style={s.laterBtn} onPress={() => setIsUpgradeOpen(false)}>
+            <Text style={s.laterTxt}>Maybe later</Text>
+          </PressScale>
+        </ScrollView>
+      </ModalShell>
+
       {/* ══════════ USAGE ACCESS EXPLANATION (shown before opening Settings) ══════════ */}
       <ModalShell visible={isAccessOpen} onClose={() => setIsAccessOpen(false)} title="Usage access">
         <ScrollView style={s.limitScroll} contentContainerStyle={s.accessWrap}>
@@ -957,6 +1018,15 @@ const s = StyleSheet.create({
   // Test reminder button on cards
   testBtn: { marginTop: 12, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 10, alignItems: 'center' },
   testBtnTxt: { color: C.mint, fontSize: 13, fontWeight: '700' },
+
+  // Plan pill (under the title) and upgrade screen
+  pillWrap: { alignSelf: 'flex-start' },
+  planPill: { marginTop: 12, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  planPillPro: { backgroundColor: C.mintTint, borderColor: C.mint },
+  planPillTxt: { color: C.dim, fontSize: 12, fontWeight: '700' },
+  planPillProTxt: { color: C.mint },
+  devBtn: { marginTop: 18, borderRadius: 14, borderWidth: 1, borderColor: C.softRed, borderStyle: 'dashed', paddingVertical: 12, alignItems: 'center' },
+  devBtnTxt: { color: C.softRed, fontSize: 13, fontWeight: '700' },
 
   // Tip card (battery)
   tipCard: { backgroundColor: C.surface, borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: C.border },
