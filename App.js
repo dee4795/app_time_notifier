@@ -63,6 +63,7 @@ const MESSAGE_IDEAS = [
 ];
 
 const STORAGE_KEY = 'monitored_apps_v1';
+const BATTERY_HINT_KEY = 'battery_hint_v1';   // saved once the user taps "Got it"
 
 // ── Calm colour palette (all colours live here, so changing the look is easy) ──
 const C = {
@@ -256,6 +257,7 @@ function MainScreen() {
   const [isAccessOpen, setIsAccessOpen] = useState(false);
   const [notifOk, setNotifOk] = useState(null);       // notifications allowed? null = not checked yet
   const [loaded, setLoaded] = useState(false);        // true after saved apps are read from the phone
+  const [batteryHintDone, setBatteryHintDone] = useState(true);  // true = do not show the battery tip
 
   useEffect(() => { loadSaved(); }, []);
 
@@ -263,6 +265,9 @@ function MainScreen() {
     try {
       const json = await AsyncStorage.getItem(STORAGE_KEY);
       if (json) setMonitoredApps(JSON.parse(json));
+      // Show the battery tip until the user has tapped "Got it" once
+      const hint = await AsyncStorage.getItem(BATTERY_HINT_KEY);
+      setBatteryHintDone(hint === 'done');
     } catch (e) { console.error(e); }
     finally { setLoaded(true); }
   };
@@ -369,6 +374,17 @@ function MainScreen() {
     } catch (e) {
       console.warn('Test reminder failed:', e);
     }
+  };
+
+  // ── Battery tip: some phones stop background apps to save battery ──
+  // This opens Android's own battery page. No special permission is needed.
+  const openBatterySettings = () => {
+    Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS')
+      .catch(() => Linking.openSettings());   // fallback: our app's settings page
+  };
+  const dismissBatteryHint = async () => {
+    setBatteryHintDone(true);
+    try { await AsyncStorage.setItem(BATTERY_HINT_KEY, 'done'); } catch (_) { /* not important */ }
   };
 
   // ── Open Android Settings where the user turns on Usage access ──
@@ -566,6 +582,24 @@ function MainScreen() {
                 <View style={s.bannerBtns}>
                   <PressScale onPress={() => Linking.openSettings()} style={s.bannerBtn}>
                     <Text style={s.bannerBtnTxt}>Open settings</Text>
+                  </PressScale>
+                </View>
+              </FadeInUp>
+            )}
+            {!batteryHintDone && (
+              <FadeInUp style={s.tipCard}>
+                <Text style={s.tipTitle}>Keep reminders reliable</Text>
+                <Text style={s.bannerText}>
+                  Some phones stop apps in the background to save battery. If a reminder ever comes
+                  late or not at all, open the battery settings and set App Time Notifier to
+                  "Don't optimize" (on some phones it is called "Unrestricted").
+                </Text>
+                <View style={s.bannerBtns}>
+                  <PressScale onPress={openBatterySettings} style={s.bannerBtn}>
+                    <Text style={s.bannerBtnTxt}>Open battery settings</Text>
+                  </PressScale>
+                  <PressScale onPress={dismissBatteryHint} style={s.bannerBtnOutline}>
+                    <Text style={s.bannerBtnOutlineTxt}>Got it</Text>
                   </PressScale>
                 </View>
               </FadeInUp>
@@ -923,6 +957,10 @@ const s = StyleSheet.create({
   // Test reminder button on cards
   testBtn: { marginTop: 12, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 10, alignItems: 'center' },
   testBtnTxt: { color: C.mint, fontSize: 13, fontWeight: '700' },
+
+  // Tip card (battery)
+  tipCard: { backgroundColor: C.surface, borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: C.border },
+  tipTitle: { color: C.text, fontSize: 15, fontWeight: '700', marginBottom: 6 },
 
   // Banner (usage access is off)
   banner: { backgroundColor: C.mintTint, borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: C.mint },
