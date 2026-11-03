@@ -29,6 +29,7 @@ import { useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
+import { Asset } from 'expo-asset';
 // Why this library: the built-in SafeAreaView does nothing on Android.
 // This one gives us the real size of the notch / status bar / nav bar.
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,9 +59,10 @@ const QUICK_LIMITS = [
 // ── Message ideas. Soft wellbeing wording, no medical claims. ──
 const MESSAGE_IDEAS = [
   'Time for a break. Rest your eyes, stretch your body and drink some water.',
-  'You have been on your phone for a while. Look away, take a deep breath and go for a short walk.',
-  'थोडा ब्रेक घ्या. डोळ्यांना आराम द्या, पाणी प्या आणि थोडं चाला.',
 ];
+
+// A funny, cute sample picture, so people can try the reminder without choosing their own photo
+const DEMO_IMAGE = require('./assets/demo-cute-cat.png');
 
 const STORAGE_KEY = 'monitored_apps_v1';
 const BATTERY_HINT_KEY = 'battery_hint_v1';
@@ -486,6 +488,21 @@ function MainScreen() {
     }
   };
 
+  // ── Use the sample picture as the reminder photo ──
+  // Same path as a picked photo: our Kotlin code makes the private copy.
+  const onUseSamplePhoto = async () => {
+    try {
+      const asset = Asset.fromModule(DEMO_IMAGE);
+      await asset.downloadAsync();                 // makes sure a real file exists on the phone
+      const saved = await nativeModule.savePhoto(asset.localUri || asset.uri);
+      deleteFileQuietly(photoUri);                 // remove the previous photo, if any
+      setPhotoUri(saved);
+    } catch (e) {
+      console.warn('Sample photo failed:', e);
+      Alert.alert('Photo problem', 'Could not use the sample picture. Please try again.');
+    }
+  };
+
   const totalMinutes = (parseInt(limitHours, 10) || 0) * 60 + (parseInt(limitMins, 10) || 0);
 
   // ── Save the limit ──
@@ -837,10 +854,21 @@ function MainScreen() {
               </View>
             </View>
           ) : (
-            <PressScale style={s.photoAdd} onPress={pickPhoto}>
-              <Text style={s.photoAddEmoji}>🖼️</Text>
-              <Text style={s.photoAddTxt}>Choose a photo</Text>
-            </PressScale>
+            <>
+              <PressScale style={s.photoAdd} onPress={pickPhoto}>
+                <Text style={s.photoAddEmoji}>🖼️</Text>
+                <Text style={s.photoAddTxt}>Choose a photo</Text>
+              </PressScale>
+
+              {/* Sample picture: tap to use it as the photo */}
+              <PressScale wrapStyle={s.stretch} style={s.demoCard} onPress={onUseSamplePhoto}>
+                <Image source={DEMO_IMAGE} style={s.demoThumb} />
+                <View style={s.demoText}>
+                  <Text style={s.demoTitle}>Or try a sample picture</Text>
+                  <Text style={s.demoHint}>Tap to use this cheeky cat as your photo</Text>
+                </View>
+              </PressScale>
+            </>
           )}
 
           <PressScale style={s.saveBtn} onPress={onSave}>
@@ -998,6 +1026,11 @@ const s = StyleSheet.create({
   photoAddEmoji: { fontSize: 30 },
   photoAddTxt: { color: C.dim, fontSize: 14 },
   photoWrap: { borderRadius: 20, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  demoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 12, marginTop: 12 },
+  demoThumb: { width: 64, height: 64, borderRadius: 14 },
+  demoText: { flex: 1, marginLeft: 14 },
+  demoTitle: { color: C.text, fontSize: 14, fontWeight: '700' },
+  demoHint: { color: C.dim, fontSize: 12, marginTop: 2 },
   photoPreview: { width: '100%', height: 220 },
   photoBtns: { position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', gap: 10 },
   photoBtn: { borderRadius: 20, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: 'rgba(15,28,36,0.8)', borderWidth: 1 },
