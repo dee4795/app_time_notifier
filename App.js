@@ -901,12 +901,6 @@ function MainScreen() {
                       <Image source={{ uri: app.photoUri }} style={s.cardPhoto} />
                     ) : null}
                   </View>
-
-                  {hasNativeNotify ? (
-                    <PressScale wrapStyle={s.stretch} style={s.testBtn} onPress={() => onTestReminder(app)}>
-                      <Text style={s.testBtnTxt}>🔔  Send test reminder</Text>
-                    </PressScale>
-                  ) : null}
                 </FadeInUp>
               );
             })}
