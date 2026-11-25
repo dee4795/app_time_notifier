@@ -25,7 +25,7 @@ import java.io.FileOutputStream
 //  Usage time:   getTodayUsageMinutes
 //  Photos:       savePhoto, deletePhoto
 //  Reminders:    saveWatchList, startWatching, stopWatching, isWatching,
-//                areNotificationsEnabled, showTestNotification
+//                areNotificationsEnabled
 class AppListReaderModule : Module() {
 
   private val ctx: Context?
@@ -95,30 +95,6 @@ class AppListReaderModule : Module() {
     Function("areNotificationsEnabled") {
       val c = ctx
       c != null && ReminderNotifier.areEnabled(c)
-    }
-
-    // Shows the reminder right now, so the user can see how it will look.
-    // Returns "ok", or a short sentence that says what went wrong.
-    Function("showTestNotification") { packageName: String ->
-      val c = ctx
-      if (c == null) {
-        "No Android context yet. Please reopen the app."
-      } else {
-        try {
-          val list = NotifierStore.loadWatchList(c)
-          val item = list.firstOrNull { it.packageName == packageName }
-          when {
-            item == null ->
-              "This app is not in the saved list yet (saved apps: ${list.size}). Close and reopen App Time Notifier, then try again."
-            !ReminderNotifier.areEnabled(c) ->
-              "Android says notifications are OFF for this app."
-            ReminderNotifier.showReminder(c, item, isTest = true) -> "ok"
-            else -> "The notification could not be shown."
-          }
-        } catch (e: Exception) {
-          "Error: ${e.message}"
-        }
-      }
     }
   }
 

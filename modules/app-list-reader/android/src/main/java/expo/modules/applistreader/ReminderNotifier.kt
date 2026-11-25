@@ -90,11 +90,11 @@ object ReminderNotifier {
   }
 
   // Shows the reminder. Returns false if notifications are switched off.
-  fun showReminder(context: Context, item: WatchItem, isTest: Boolean): Boolean {
+  fun showReminder(context: Context, item: WatchItem): Boolean {
     if (!areEnabled(context)) return false
     ensureChannels(context)
 
-    val title = if (isTest) "${item.appName}: test reminder" else "${item.appName}: time for a break"
+    val title = "${item.appName}: time for a break"
     val builder = newBuilder(context, CHANNEL_REMINDER, true)
       .setSmallIcon(R.drawable.ic_stat_notify)
       .setContentTitle(title)

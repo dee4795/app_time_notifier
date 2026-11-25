@@ -38,7 +38,6 @@ import { Asset } from 'expo-asset';
 // Why this library: the built-in SafeAreaView does nothing on Android.
 // This one gives us the real size of the notch / status bar / nav bar.
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FREE_APP_LIMIT, canAddApp, isAppActiveForPlan } from './planLimits';
 
 // ── Load our native module that reads ALL installed apps from Android ──
 let nativeModule = null;
@@ -79,7 +78,6 @@ const SAMPLE_PHOTOS = [
 
 const STORAGE_KEY = 'monitored_apps_v1';
 const BATTERY_HINT_KEY = 'battery_hint_v1';   // saved once the user taps "Got it"
-const PRO_KEY = 'is_pro_v1';                  // "yes" when Pro is on (real payment comes later)
 
 // ── Calm colour palette (all colours live here, so changing the look is easy) ──
 const C = {
@@ -403,8 +401,6 @@ function MainScreen() {
   const [notifOk, setNotifOk] = useState(null);       // notifications allowed? null = not checked yet
   const [loaded, setLoaded] = useState(false);        // true after saved apps are read from the phone
   const [batteryHintDone, setBatteryHintDone] = useState(true);  // true = do not show the battery tip
-  const [isPro, setIsPro] = useState(false);                      // free plan until Pro is bought
-  const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Editing an existing app vs adding a new one
   const [isEditing, setIsEditing] = useState(false);
@@ -421,9 +417,6 @@ function MainScreen() {
       // Show the battery tip until the user has tapped "Got it" once
       const hint = await AsyncStorage.getItem(BATTERY_HINT_KEY);
       setBatteryHintDone(hint === 'done');
-      // Only honor the dev-only Pro test switch in development builds (__DEV__).
-      // Real Google Play Billing entitlement will be added in M7.
-      setIsPro(__DEV__ && (await AsyncStorage.getItem(PRO_KEY)) === 'yes');
     } catch (e) { console.error(e); }
     finally { setLoaded(true); }
   };
@@ -461,6 +454,7 @@ function MainScreen() {
       if (state === 'active') {
         refreshUsage(monitoredApps);
         // Check once more after a moment: Android may need a second to apply a Settings change
+        clearTimeout(lateCheck);
         lateCheck = setTimeout(() => refreshUsage(monitoredApps), 1500);
       }
     });
@@ -474,10 +468,7 @@ function MainScreen() {
   useEffect(() => {
     if (!hasNativeNotify || !loaded || hasAccess === null) return;
     try {
-      // Only send apps allowed by the current plan.
-      // Extra apps stay saved on the screen as "Paused" and are never deleted.
-      const activeApps = monitoredApps.filter((_, index) => isAppActiveForPlan(index, isPro));
-      const items = activeApps.map(a => ({
+      const items = monitoredApps.map(a => ({
         appName: a.appName,
         packageName: a.packageName,
         limitMinutes: a.limitMinutes,
@@ -486,13 +477,13 @@ function MainScreen() {
       }));
       // index.ts turns the list into text by itself, so we pass the list as it is
       nativeModule.saveWatchList(items);
-      console.log('[watch] saved', items.length, 'active app(s); usage access =', hasAccess);
+      console.log('[watch] saved', items.length, 'app(s); usage access =', hasAccess);
       if (items.length > 0 && hasAccess) nativeModule.startWatching();
       else nativeModule.stopWatching();
     } catch (e) {
       console.warn('Watcher sync failed:', e);
     }
-  }, [monitoredApps, hasAccess, loaded, isPro]);
+  }, [monitoredApps, hasAccess, loaded]);
 
   // ── Notification permission (Android 13 and newer shows its own pop-up) ──
   const askNotifPermission = async () => {
@@ -508,49 +499,6 @@ function MainScreen() {
       console.warn('Notification permission failed:', e);
       return false;
     }
-  };
-
-  // ── Show the reminder now, so the user sees how it will look ──
-  const onTestReminder = async (app) => {
-    try {
-      const allowed = await askNotifPermission();
-      if (!allowed) {
-        Alert.alert(
-          'Notifications are off',
-          'Please allow notifications for App Time Notifier in Settings.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open settings', onPress: () => Linking.openSettings() },
-          ]
-        );
-        return;
-      }
-      const result = nativeModule.showTestNotification(app.packageName);
-      // New Kotlin code answers "ok" or a sentence; the older one answered true/false
-      if (result !== 'ok' && result !== true) {
-        Alert.alert('Could not show it', result === false ? 'Please try again in a moment.' : String(result));
-      }
-    } catch (e) {
-      console.warn('Test reminder failed:', e);
-    }
-  };
-
-  // ── Free plan: the free version watches only FREE_APP_LIMIT apps ──
-  const onAddPressed = () => {
-    if (!canAddApp(monitoredApps.length, isPro)) {
-      setIsUpgradeOpen(true);   // show the upgrade screen instead of the app list
-      return;
-    }
-    openPicker();
-  };
-
-  // Testing only: lets us try both plans without payment. The button that
-  // calls this is shown only in development builds (see __DEV__ below).
-  const toggleProForTesting = async () => {
-    const next = !isPro;
-    setIsPro(next);
-    try { await AsyncStorage.setItem(PRO_KEY, next ? 'yes' : 'no'); } catch (_) { /* not important */ }
-    if (next) setIsUpgradeOpen(false);
   };
 
   // ── Battery tip: some phones stop background apps to save battery ──
@@ -853,57 +801,49 @@ function MainScreen() {
             <Text style={s.sectionLabel}>
               {monitoredApps.length === 1 ? '1 app watched' : `${monitoredApps.length} apps watched`}
             </Text>
-            {monitoredApps.map((app, index) => {
-              const active = isAppActiveForPlan(index, isPro);
-              return (
-                <FadeInUp key={app.packageName} delay={Math.min(index, 5) * 70} style={[s.card, !active && s.cardPaused]}>
-                  <View style={s.cardTop}>
-                    <View style={s.iconTile}><AppIcon icon={app.icon} size={36} /></View>
-                    <View style={s.cardInfo}>
-                      <Text style={s.cardName} numberOfLines={1}>{app.appName}</Text>
-                      <View style={s.pillRow}>
-                        <View style={s.pill}>
-                          <Text style={s.pillTxt}>⏱  {fmtLimit(app.limitMinutes)} per day</Text>
-                        </View>
-                        {!active && (
-                          <View style={s.pausedPill}>
-                            <Text style={s.pausedPillTxt}>Paused · Pro needed</Text>
-                          </View>
-                        )}
+            {monitoredApps.map((app, index) => (
+              <FadeInUp key={app.packageName} delay={Math.min(index, 5) * 70} style={s.card}>
+                <View style={s.cardTop}>
+                  <View style={s.iconTile}><AppIcon icon={app.icon} size={36} /></View>
+                  <View style={s.cardInfo}>
+                    <Text style={s.cardName} numberOfLines={1}>{app.appName}</Text>
+                    <View style={s.pillRow}>
+                      <View style={s.pill}>
+                        <Text style={s.pillTxt}>⏱  {fmtLimit(app.limitMinutes)} per day</Text>
                       </View>
-                    </View>
-                    <View style={s.cardActions}>
-                      <Pressable onPress={() => onEditApp(app)} style={s.editBtn} hitSlop={10}>
-                        <Text style={s.editTxt}>✎</Text>
-                      </Pressable>
-                      <Pressable onPress={() => onDelete(app)} style={s.delBtn} hitSlop={10}>
-                        <Text style={s.delTxt}>✕</Text>
-                      </Pressable>
                     </View>
                   </View>
+                  <View style={s.cardActions}>
+                    <Pressable onPress={() => onEditApp(app)} style={s.editBtn} hitSlop={10}>
+                      <Text style={s.editTxt}>✎</Text>
+                    </Pressable>
+                    <Pressable onPress={() => onDelete(app)} style={s.delBtn} hitSlop={10}>
+                      <Text style={s.delTxt}>✕</Text>
+                    </Pressable>
+                  </View>
+                </View>
 
-                  {hasAccess ? (
-                    <View style={s.usageBox}>
-                      <View style={s.usageRow}>
-                        <Text style={s.usageLabel}>Used today</Text>
-                        <Text style={s.usageValue}>
-                          {fmtLimit(usage[app.packageName] || 0)} / {fmtLimit(app.limitMinutes)}
-                        </Text>
-                      </View>
-                      <ProgressBar value={(usage[app.packageName] || 0) / app.limitMinutes} />
+                {hasAccess ? (
+                  <View style={s.usageBox}>
+                    <View style={s.usageRow}>
+                      <Text style={s.usageLabel}>Used today</Text>
+                      <Text style={s.usageValue}>
+                        {fmtLimit(usage[app.packageName] || 0)} / {fmtLimit(app.limitMinutes)}
+                      </Text>
                     </View>
+                    <ProgressBar value={(usage[app.packageName] || 0) / app.limitMinutes} />
+                  </View>
+                ) : null}
+
+                <View style={s.msgRow}>
+                  <View style={s.msgBar} />
+                  <Text style={s.cardMsg} numberOfLines={3}>{app.message}</Text>
+                  {app.photoUri ? (
+                    <Image source={{ uri: app.photoUri }} style={s.cardPhoto} />
                   ) : null}
-
-                  <View style={s.msgRow}>
-                    <View style={s.msgBar} />
-                    <Text style={s.cardMsg} numberOfLines={3}>{app.message}</Text>
-                    {app.photoUri ? (
-                      <Image source={{ uri: app.photoUri }} style={s.cardPhoto} />
-                    ) : null}
-                  </View>
-                </FadeInUp>
-              );
-            })}
+                </View>
+              </FadeInUp>
+            ))}
             <Text style={s.note}>
               While watching, Android shows a small "Watching your app limits" notice.
               That is how it lets us check your usage in the background.
@@ -914,7 +854,7 @@ function MainScreen() {
 
       {/* ── Add button stays at the bottom, above the navigation bar ── */}
       <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
-        <PressScale onPress={onAddPressed} style={s.addBtn}>
+        <PressScale onPress={openPicker} style={s.addBtn}>
           <Text style={s.addBtnTxt}>+  Add App to Monitor</Text>
         </PressScale>
         {/* Debug button: __DEV__ is true only in development builds.
@@ -1098,33 +1038,6 @@ function MainScreen() {
         </ScrollView>
       </ModalShell>
 
-      {/* ══════════ UPGRADE TO PRO ══════════ */}
-      <ModalShell visible={isUpgradeOpen} onClose={() => setIsUpgradeOpen(false)} title="Upgrade to Pro">
-        <ScrollView style={s.limitScroll} contentContainerStyle={s.accessWrap}>
-          <View style={s.emptyCircle}><Text style={s.emptyEmoji}>✨</Text></View>
-          <Text style={s.accessTitle}>Watch more apps</Text>
-          <View style={s.accessQuote}>
-            <Text style={s.accessText}>
-              The free plan watches {FREE_APP_LIMIT} app. Pro lets you watch as many apps as you
-              like, each with its own limit, message and photo.
-            </Text>
-          </View>
-          <Text style={s.accessSteps}>
-            Payments are not set up yet. Pro will be available when App Time Notifier is on Google Play.
-          </Text>
-          {__DEV__ ? (
-            <PressScale wrapStyle={s.stretch} style={s.devBtn} onPress={toggleProForTesting}>
-              <Text style={s.devBtnTxt}>
-                Developer only: {isPro ? 'turn Pro off' : 'turn Pro on'} (testing)
-              </Text>
-            </PressScale>
-          ) : null}
-          <PressScale wrapStyle={s.stretch} style={s.laterBtn} onPress={() => setIsUpgradeOpen(false)}>
-            <Text style={s.laterTxt}>Maybe later</Text>
-          </PressScale>
-        </ScrollView>
-      </ModalShell>
-
       {/* ══════════ USAGE ACCESS EXPLANATION (shown before opening Settings) ══════════ */}
       <ModalShell visible={isAccessOpen} onClose={() => setIsAccessOpen(false)} title="Usage access">
         <ScrollView style={s.limitScroll} contentContainerStyle={s.accessWrap}>
@@ -1273,7 +1186,6 @@ const s = StyleSheet.create({
   // Cards
   sectionLabel: { color: C.dim, fontSize: 13, letterSpacing: 0.6, marginBottom: 12, marginLeft: 4 },
   card: { backgroundColor: C.surface, borderRadius: 22, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: C.border },
-  cardPaused: { opacity: 0.65 },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   iconTile: { width: 56, height: 56, borderRadius: 16, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
   cardInfo: { flex: 1 },
@@ -1281,8 +1193,6 @@ const s = StyleSheet.create({
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   pill: { alignSelf: 'flex-start', backgroundColor: C.mintTint, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   pillTxt: { color: C.mint, fontSize: 12, fontWeight: '600' },
-  pausedPill: { alignSelf: 'flex-start', backgroundColor: C.surface2, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: C.softRed },
-  pausedPillTxt: { color: C.softRed, fontSize: 11, fontWeight: '600' },
   cardActions: { flexDirection: 'row', gap: 8 },
   editBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center' },
   editTxt: { color: C.mint, fontSize: 14, fontWeight: '700' },
@@ -1373,19 +1283,6 @@ const s = StyleSheet.create({
   barTrack: { height: 8, borderRadius: 4, backgroundColor: C.surface2, overflow: 'hidden' },
   barFill: { height: 8, borderRadius: 4, backgroundColor: C.mint },
   barFillFull: { backgroundColor: C.softRed },
-
-  // Test reminder button on cards
-  testBtn: { marginTop: 12, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 10, alignItems: 'center' },
-  testBtnTxt: { color: C.mint, fontSize: 13, fontWeight: '700' },
-
-  // Plan pill (under the title) and upgrade screen
-  pillWrap: { alignSelf: 'flex-start' },
-  planPill: { marginTop: 12, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  planPillPro: { backgroundColor: C.mintTint, borderColor: C.mint },
-  planPillTxt: { color: C.dim, fontSize: 12, fontWeight: '700' },
-  planPillProTxt: { color: C.mint },
-  devBtn: { marginTop: 18, borderRadius: 14, borderWidth: 1, borderColor: C.softRed, borderStyle: 'dashed', paddingVertical: 12, alignItems: 'center' },
-  devBtnTxt: { color: C.softRed, fontSize: 13, fontWeight: '700' },
 
   // Tip card (battery)
   tipCard: { backgroundColor: C.surface, borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: C.border },

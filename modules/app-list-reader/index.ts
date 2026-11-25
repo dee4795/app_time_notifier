@@ -86,9 +86,3 @@ export function isWatching(): boolean {
 export function areNotificationsEnabled(): boolean {
   return AppListReaderModule.areNotificationsEnabled();
 }
-
-/** Shows the reminder for one watched app right now (for testing).
- *  Returns "ok", or a short sentence that says what went wrong. */
-export function showTestNotification(packageName: string): string {
-  return AppListReaderModule.showTestNotification(packageName);
-}

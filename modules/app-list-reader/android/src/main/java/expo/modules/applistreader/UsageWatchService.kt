@@ -106,7 +106,7 @@ class UsageWatchService : Service() {
         NotifierStore.lastNotifiedDay(this, item.packageName, item.limitMinutes) == today
       if (used >= item.limitMinutes && !alreadySentToday) {
         // Only remember "sent" if the notification was really shown
-        if (ReminderNotifier.showReminder(this, item, isTest = false)) {
+        if (ReminderNotifier.showReminder(this, item)) {
           NotifierStore.markNotified(this, item.packageName, item.limitMinutes, today)
         }
       }
