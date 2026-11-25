@@ -24,7 +24,7 @@ import java.io.FileOutputStream
 //  Usage access: hasUsageAccess, openUsageAccessSettings, getUsageAccessDebug
 //  Usage time:   getTodayUsageMinutes
 //  Photos:       savePhoto, deletePhoto
-//  Reminders:    saveWatchList, startWatching, stopWatching,
+//  Reminders:    saveWatchList, startWatching, stopWatching, isWatching,
 //                areNotificationsEnabled, showTestNotification
 class AppListReaderModule : Module() {
 
@@ -84,6 +84,12 @@ class AppListReaderModule : Module() {
     Function("stopWatching") {
       ctx?.let { ServiceStarter.stop(it) }
       Unit
+    }
+
+    // Returns true if our background watcher service is currently running.
+    // We use this in the debug screen so we can see the service status at a glance.
+    Function("isWatching") {
+      UsageWatchService.isRunning
     }
 
     Function("areNotificationsEnabled") {

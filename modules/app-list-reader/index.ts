@@ -77,6 +77,11 @@ export function stopWatching(): void {
   AppListReaderModule.stopWatching();
 }
 
+/** true if the background watcher service is currently running. */
+export function isWatching(): boolean {
+  return AppListReaderModule.isWatching();
+}
+
 /** true if the user allows our notifications. */
 export function areNotificationsEnabled(): boolean {
   return AppListReaderModule.areNotificationsEnabled();

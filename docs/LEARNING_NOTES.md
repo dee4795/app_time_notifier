@@ -119,3 +119,134 @@ This document tracks everything built in each milestone, explaining how it works
 
 #### Q3: What is the React Native `Modal` component and why did we use it instead of a navigation library?
 > **Answer:** `Modal` is a built-in React Native component that renders a full-screen overlay on top of everything else. We chose it over a navigation library (like React Navigation) because our app only has one real screen so far — adding a navigation library would be extra complexity that Deepak would need to explain in an interview. Using `Modal` keeps all code in one file (`App.js`), making it very easy to read and understand step by step.
+
+---
+
+## Milestone M3: Usage Time, Photo Picker, and Rules Storage
+
+### What We Built
+
+1. **Usage time reading** (Kotlin `UsageReader.kt`):
+   - Uses Android's `UsageStatsManager` to read how long each app was on screen today.
+   - Works by reading a log of events ("Instagram came to front at 10:00", "Instagram went back at 10:05") and adding up the time between each "front" and "back" event since midnight.
+   - Shows the result as a progress bar on each monitored app card.
+
+2. **Usage access permission flow**:
+   - Android requires the user to grant "Usage access" in Settings. It cannot be asked as a pop-up — the user must go to Settings themselves.
+   - We show an explanation screen first (required by Google Play policy) and then open the Settings page.
+   - After returning from Settings, the app checks the permission again automatically.
+
+3. **Photo picker and private storage** (Kotlin `AppListReaderModule.kt` — `savePhoto`):
+   - The user picks a photo from their gallery using the system photo picker (`expo-image-picker`).
+   - The picker gives us a temporary URI. We immediately copy the photo into our app's private folder (`filesDir/photos/`) so it stays even if the original is deleted.
+   - While copying, we also make the photo smaller (at most 1600 pixels wide) and rotate it upright if needed (some phones save photos sideways with an EXIF rotation note).
+   - Photos never leave the phone.
+
+4. **Rules saved on the phone** (AsyncStorage):
+   - Each monitored app's data (app name, package name, limit, message, photo path) is saved as JSON in AsyncStorage.
+   - The list survives closing the app and restarting the phone.
+
+### How It Works (Simple Explanation)
+
+- **UsageStatsManager**: Android's built-in system that tracks app usage. Only available if the user grants "Usage access" in Settings. Apps need this permission because usage data is sensitive (it shows what apps you use and for how long).
+- **EXIF data**: Hidden information inside a photo file — things like the camera model, date taken, and rotation. We use it to detect if a photo is sideways and rotate it before saving.
+- **App private storage (`filesDir`)**: Every Android app has its own private folder. Only our app can read it. No other app or user can access it. The files are deleted when the app is uninstalled.
+- **System photo picker**: Android's built-in photo picker. The user picks a photo and Android gives us temporary access. We do NOT need storage permission (`READ_EXTERNAL_STORAGE`) because Android handles the access for us. This is the modern, safe way to pick photos.
+
+### Interview Questions & Answers
+
+#### Q1: How does the app read how long an app was used today?
+> **Answer:** We use Android's `UsageStatsManager` with `queryEvents()`. This gives us a log of events — when each app came to the foreground and when it went to the background. We loop through the events since midnight, adding up the time between each "came to front" and "went to back" pair. The result is the total screen time for that app today. We reset at midnight by using today's date as the starting point for the query.
+
+#### Q2: Why do you copy the photo to the app's private folder instead of saving the original URI?
+> **Answer:** The system photo picker gives us a temporary URI that may stop working later (if the user moves, renames, or deletes the original photo, or if Android revokes our temporary access). By copying the photo immediately into our app's private folder (`filesDir/photos/`), we own a permanent copy that always works as long as our app is installed. We also resize and rotate it at this step, so we only do that expensive work once.
+
+#### Q3: What is "Usage access" and why can't we ask for it like a normal permission?
+> **Answer:** "Usage access" (`PACKAGE_USAGE_STATS`) lets an app see which other apps the user has opened and for how long. Android treats this as a very sensitive permission — it cannot be granted with the normal runtime pop-up. Instead, Android opens a special Settings screen where the user manually turns on a switch. Our app shows an explanation screen first (telling the user why we need it and that the data never leaves the phone) and then opens that Settings screen. This explanation is required by Google Play policy.
+
+---
+
+## Milestone M4: Background Reminders and Notifications
+
+### What We Built
+
+1. **Foreground service** (`UsageWatchService.kt`):
+   - A background service that checks app usage every 30 seconds.
+   - Android only allows an app to run reliably in the background if it shows a small permanent notification. This is called a "foreground service". Ours shows "Watching your app limits".
+   - Every 30 seconds it reads the watch list, checks usage, and sends a reminder if the limit is reached.
+   - Uses `START_STICKY` — if Android kills the service (rare), Android restarts it automatically.
+
+2. **Boot receiver** (`BootReceiver.kt`):
+   - If the phone restarts, the watcher service stops (all services stop on reboot).
+   - `BootReceiver` listens for the `BOOT_COMPLETED` broadcast and restarts the service.
+   - It only restarts if the user has at least one app in the watch list AND usage access is on. No point running if there is nothing to watch.
+
+3. **Reminder notification with photo** (`ReminderNotifier.kt`):
+   - Sends a "Big Picture" style notification — a small version when folded, and the user's photo + message when opened.
+   - Each monitored app gets exactly one reminder per day. We store the date the reminder was sent. If today's date matches the stored date, we skip. After midnight the date changes, so reminders reset automatically.
+   - The notification opens our app when tapped.
+
+4. **Notification permission** (Android 13+):
+   - Android 13 and newer require the app to ask for `POST_NOTIFICATIONS` permission at runtime (like asking for camera access).
+   - We ask when the user saves their first monitored app, with a friendly explanation first.
+
+5. **Test reminder button**:
+   - Each app card has a "Send test reminder" button. Tapping it fires the notification immediately so the user can see how it looks with their photo and message.
+
+### How It Works (Simple Explanation)
+
+- **Foreground service**: A special kind of background task. Normal background tasks are stopped by Android after a few minutes. A foreground service is allowed to keep running because it shows a notification — Android treats it like something the user knows is happening.
+- **`START_STICKY`**: When Android returns `START_STICKY` from `onStartCommand`, it tells Android: "If you have to stop this service, please restart it when you have resources again."
+- **`HandlerThread`**: A background thread with its own message queue. We run the usage check on this thread so the phone's screen never freezes during the check (reading usage stats can be slow).
+- **Notification channel**: Android 8+ groups notifications into "channels". Users can mute or change the sound for each channel. We have two: one for the permanent "Watching" notice (low importance, no sound) and one for the reminder (high importance, with sound).
+- **`todayKey()`**: Returns today's date as a string like `"2026-11-25"`. We save this when a reminder fires. After midnight it becomes `"2026-11-26"`, so the reminder can fire again — that is the daily reset.
+
+### Interview Questions & Answers
+
+#### Q1: What is a foreground service and why does this app need one?
+> **Answer:** A foreground service is an Android component that keeps running in the background while showing a small permanent notification. Normal background work is limited — Android may stop it after a few minutes. A foreground service is allowed to run continuously because the user can see it is running (through the notification). Our app needs this because we must check app usage every 30 seconds all day, which is not possible with limited background tasks.
+
+#### Q2: How does the app ensure the reminder only fires once per day?
+> **Answer:** We use a simple date string as the key. When a reminder fires, we save today's date (e.g., `"2026-11-25"`) in `SharedPreferences` for that app's package name. Before sending the next reminder, we compare today's date with the saved date. If they are the same, we skip. After midnight the date becomes `"2026-11-26"`, so the check passes and the reminder can fire again the next day.
+
+#### Q3: What happens to the background service when the phone restarts?
+> **Answer:** Android stops all services when the phone restarts. We handle this with a `BroadcastReceiver` called `BootReceiver`. It listens for the `ACTION_BOOT_COMPLETED` broadcast that Android sends after the phone finishes booting. When we receive it, we check if there are apps to watch and if usage access is still on. If yes, we restart the foreground service. This way, reminders keep working without the user having to open the app after a restart.
+
+---
+
+## Milestone M5: Reliability and Debug Screen
+
+### What We Built
+
+1. **Midnight reset — verified correct**:
+   - The `todayKey()` function in `NotifierStore.kt` returns the current date in `"yyyy-MM-dd"` format using `Locale.US` (always consistent, never affected by phone language settings).
+   - The service naturally resets at midnight because the date string changes. No extra code needed.
+
+2. **`isWatching()` function** (Kotlin + JS):
+   - Added a `companion object` to `UsageWatchService` with an `isRunning` boolean.
+   - Set to `true` in `onCreate`, `false` in `onDestroy`.
+   - Exposed through `AppListReaderModule` as `isWatching()`.
+   - Now JavaScript can ask "is the service running right now?" at any time.
+
+3. **Debug screen** (`App.js`):
+   - A `DebugPanel` component that reads and displays: service running, usage access, notifications, today's usage minutes for each app, and today's reset key.
+   - Shown with a small "🛠 Debug" button at the bottom of the screen.
+   - Only visible in development builds (`__DEV__ === true`). The button and panel are completely removed in release builds automatically.
+
+### How It Works (Simple Explanation)
+
+- **`companion object`**: In Kotlin, a `companion object` is like a `static` field in Java. It belongs to the class itself, not to one instance. So `UsageWatchService.isRunning` can be read from anywhere in the app without having a reference to a specific service object.
+- **`__DEV__`**: A React Native global variable. It is `true` when running a development build (connected to Metro, using `npx expo start`). It is `false` in a release build. When React Native compiles a release build, it removes all code inside `if (__DEV__) { ... }` blocks — the debug panel code does not exist in the final APK/AAB.
+- **Why `Locale.US` for the date format?** Some phone languages use different calendar systems (e.g., Persian or Arabic). `Locale.US` forces the date to always be in the Gregorian calendar with digits 0-9, so the date string is always consistent regardless of the phone's language setting.
+
+### Interview Questions & Answers
+
+#### Q1: What is `__DEV__` in React Native and why is it useful?
+> **Answer:** `__DEV__` is a global boolean that React Native sets to `true` in development builds and `false` in production (release) builds. We use it to show a debug panel only while testing — `{__DEV__ && <DebugPanel />}`. In a release build the Metro bundler removes this code entirely, so the debug panel never reaches the user. This is safer than a feature flag in a config file because there is literally no debug code in the production app.
+
+#### Q2: What is a `companion object` in Kotlin?
+> **Answer:** A `companion object` is Kotlin's way of having class-level (static) properties and functions. Code inside it belongs to the class, not to any specific instance. We use it to store `isRunning` on `UsageWatchService` so that any code — including the Kotlin module talking to JavaScript — can read the service's current state without needing a reference to the running service object.
+
+#### Q3: Why use `Locale.US` when formatting the date in `todayKey()`?
+> **Answer:** `SimpleDateFormat` uses the phone's current locale by default. Some locales use different digit systems (e.g., Arabic uses ٠١٢٣ instead of 0123) or different calendars. If the date format changes, the daily reset logic breaks — a reminder might fire twice or not at all. By forcing `Locale.US`, we always get a consistent `"yyyy-MM-dd"` string regardless of the user's phone language.
+

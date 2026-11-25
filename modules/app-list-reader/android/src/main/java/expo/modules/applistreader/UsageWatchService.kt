@@ -40,6 +40,16 @@ object ServiceStarter {
 //  2. asks Android how long each was used today,
 //  3. sends the reminder if the limit is reached (once per app per day).
 class UsageWatchService : Service() {
+
+  // companion object = shared data that belongs to the class, not one instance.
+  // We use it so any code can ask "is the service running right now?" without
+  // having to ask Android (which is slower).
+  companion object {
+    // true while the service is alive; false once onDestroy runs.
+    var isRunning: Boolean = false
+      private set   // only this file can change it
+  }
+
   private var thread: HandlerThread? = null
   private var handler: Handler? = null
 
@@ -56,6 +66,7 @@ class UsageWatchService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    isRunning = true   // tell the debug screen we are alive
     ReminderNotifier.ensureChannels(this)
     // Work runs on its own thread, so the screen is never slowed down
     thread = HandlerThread("usage-watch").also { it.start() }
@@ -102,6 +113,7 @@ class UsageWatchService : Service() {
   }
 
   override fun onDestroy() {
+    isRunning = false  // tell the debug screen we stopped
     handler?.removeCallbacksAndMessages(null)
     thread?.quitSafely()
     super.onDestroy()

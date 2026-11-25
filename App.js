@@ -8,6 +8,11 @@
 //  2. Calm colour theme (soft blue-slate + mint).
 //  3. Smooth animations using React Native's built-in Animated API
 //     (no extra animation library, so the app stays small and simple).
+//
+// M5 changes (reliability + debug screen):
+// 11. Debug screen (visible only in development builds via __DEV__).
+//     Shows: service running, usage access, notifications, usage minutes.
+//     Helps us test and understand what Android is doing.
 //  4. Nicer cards, buttons and modals.
 //
 // M3 changes (usage time):
@@ -46,6 +51,8 @@ const nativeGetInstalledApps = nativeModule ? nativeModule.getInstalledApps : nu
 const hasNativeUsage = !!nativeModule && typeof nativeModule.hasUsageAccess === 'function';
 // true only if this build already contains the reminder / watcher functions
 const hasNativeNotify = !!nativeModule && typeof nativeModule.startWatching === 'function';
+// true only if this build has the isWatching function (added in M5)
+const hasNativeIsWatching = !!nativeModule && typeof nativeModule.isWatching === 'function';
 
 // ── Quick buttons for common limits. The user can still type any value. ──
 const QUICK_LIMITS = [
@@ -233,6 +240,135 @@ const deleteFileQuietly = (uri) => {
 const onlyDigits = (t) => t.replace(/[^0-9]/g, '').slice(0, 2);
 
 // ────────────────────────────────────────────────────────────────────────────
+// DEBUG PANEL — only shown in development builds (__DEV__ === true).
+// In a release build __DEV__ is false, so this component and its button
+// are stripped out automatically. Normal users never see it.
+//
+// What it shows:
+//   • Is the background watcher service running?
+//   • Is Usage access on?
+//   • Are notifications allowed?
+//   • How many minutes each monitored app was used today?
+//   • Today's date key (used to reset reminders at midnight)
+// ────────────────────────────────────────────────────────────────────────────
+function DebugPanel({ visible, onClose, monitoredApps }) {
+  // debugInfo holds all the values we read from Android / AsyncStorage
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch fresh data every time the panel opens
+  useEffect(() => {
+    if (!visible) return;
+    refresh();
+  }, [visible]);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const info = {
+        // Service running? (uses the new isWatching function we added in M5)
+        serviceRunning: hasNativeIsWatching ? nativeModule.isWatching() : '(not in this build)',
+        // Usage access on?
+        usageAccess: hasNativeUsage ? nativeModule.hasUsageAccess() : '(not in this build)',
+        // Extra detail from Android about usage access (useful for debugging)
+        usageDetail: hasNativeUsage ? nativeModule.getUsageAccessDebug() : '',
+        // Notifications allowed?
+        notifEnabled: hasNativeNotify ? nativeModule.areNotificationsEnabled() : '(not in this build)',
+        // Today's key — this is what resets at midnight
+        todayKey: new Date().toLocaleDateString('en-CA'), // "2026-11-25" format
+        // Usage minutes for each monitored app
+        usageMinutes: {},
+      };
+
+      if (hasNativeUsage && info.usageAccess && monitoredApps.length > 0) {
+        info.usageMinutes = await nativeModule.getTodayUsageMinutes(
+          monitoredApps.map(a => a.packageName)
+        );
+      }
+
+      setDebugInfo(info);
+    } catch (e) {
+      setDebugInfo({ error: String(e) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // A single row in the debug table
+  const Row = ({ label, value, ok }) => (
+    <View style={dbg.row}>
+      <Text style={dbg.label}>{label}</Text>
+      <Text style={[dbg.value, ok === false && dbg.bad, ok === true && dbg.good]}>
+        {String(value)}
+      </Text>
+    </View>
+  );
+
+  return (
+    <ModalShell visible={visible} onClose={onClose} title="🛠 Debug Panel">
+      <ScrollView style={dbg.scroll} contentContainerStyle={{ paddingBottom: 30 }}>
+        {loading && (
+          <ActivityIndicator size="large" color={C.mint} style={{ marginTop: 30 }} />
+        )}
+
+        {debugInfo?.error && (
+          <Text style={dbg.error}>{debugInfo.error}</Text>
+        )}
+
+        {debugInfo && !debugInfo.error && (
+          <>
+            <Text style={dbg.section}>System Status</Text>
+            <Row
+              label="Background service"
+              value={debugInfo.serviceRunning ? 'Running ✓' : 'Stopped ✗'}
+              ok={debugInfo.serviceRunning === true}
+            />
+            <Row
+              label="Usage access"
+              value={debugInfo.usageAccess ? 'Allowed ✓' : 'Denied ✗'}
+              ok={debugInfo.usageAccess === true}
+            />
+            {!!debugInfo.usageDetail && (
+              <Row label="Usage detail" value={debugInfo.usageDetail} />
+            )}
+            <Row
+              label="Notifications"
+              value={debugInfo.notifEnabled ? 'Allowed ✓' : 'Denied ✗'}
+              ok={debugInfo.notifEnabled === true}
+            />
+            <Row label="Today's reset key" value={debugInfo.todayKey} />
+
+            {monitoredApps.length > 0 && (
+              <>
+                <Text style={dbg.section}>Today's Usage</Text>
+                {monitoredApps.map(app => (
+                  <Row
+                    key={app.packageName}
+                    label={app.appName}
+                    value={`${debugInfo.usageMinutes[app.packageName] ?? '?'} / ${app.limitMinutes} min`}
+                    ok={(debugInfo.usageMinutes[app.packageName] ?? 0) < app.limitMinutes}
+                  />
+                ))}
+              </>
+            )}
+
+            <Text style={dbg.hint}>
+              Midnight reset: when the "Today's reset key" date changes (after midnight),
+              the reminder can fire again for each app.
+            </Text>
+          </>
+        )}
+
+        {/* Refresh button — tap to read fresh values */}
+        <PressScale style={dbg.refreshBtn} onPress={refresh}>
+          <Text style={dbg.refreshTxt}>↻  Refresh</Text>
+        </PressScale>
+      </ScrollView>
+    </ModalShell>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -264,6 +400,8 @@ function MainScreen() {
   const [batteryHintDone, setBatteryHintDone] = useState(true);  // true = do not show the battery tip
   const [isPro, setIsPro] = useState(false);                      // free plan until Pro is bought
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+  // Debug panel — only used in development builds (__DEV__)
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
 
   useEffect(() => { loadSaved(); }, []);
 
@@ -713,6 +851,13 @@ function MainScreen() {
         <PressScale onPress={onAddPressed} style={s.addBtn}>
           <Text style={s.addBtnTxt}>+  Add App to Monitor</Text>
         </PressScale>
+        {/* Debug button: __DEV__ is true only in development builds.
+            In a release build this whole block is removed automatically. */}
+        {__DEV__ && (
+          <Pressable onPress={() => setIsDebugOpen(true)} style={s.debugBtn}>
+            <Text style={s.debugBtnTxt}>🛠 Debug</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* ══════════ APP PICKER (installed apps only) ══════════ */}
@@ -930,13 +1075,36 @@ function MainScreen() {
           </PressScale>
         </ScrollView>
       </ModalShell>
+
+      {/* ══════════ DEBUG PANEL (dev builds only) ══════════ */}
+      {__DEV__ && (
+        <DebugPanel
+          visible={isDebugOpen}
+          onClose={() => setIsDebugOpen(false)}
+          monitoredApps={monitoredApps}
+        />
+      )}
     </View>
   );
 }
 
+// Styles only used inside the DebugPanel component
+const dbg = StyleSheet.create({
+  scroll: { flex: 1, paddingHorizontal: 20 },
+  section: { color: C.mint, fontSize: 12, fontWeight: '700', letterSpacing: 1, marginTop: 20, marginBottom: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  label: { color: C.dim, fontSize: 13, flex: 1, marginRight: 8 },
+  value: { color: C.text, fontSize: 13, fontWeight: '600', textAlign: 'right', flexShrink: 1 },
+  good: { color: C.mint },
+  bad: { color: C.softRed },
+  error: { color: C.softRed, fontSize: 13, margin: 20 },
+  hint: { color: C.dim, fontSize: 12, lineHeight: 18, marginTop: 20, fontStyle: 'italic' },
+  refreshBtn: { backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 12, alignItems: 'center', marginTop: 24 },
+  refreshTxt: { color: C.mint, fontSize: 14, fontWeight: '700' },
+});
+
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-
   // Header
   header: { paddingHorizontal: 24, paddingBottom: 12 },
   title: { fontSize: 28, fontWeight: '700', color: C.text, letterSpacing: 0.3 },
@@ -1087,4 +1255,8 @@ const s = StyleSheet.create({
   stretch: { alignSelf: 'stretch' },
   saveBtn: { backgroundColor: C.mint, borderRadius: 18, paddingVertical: 17, paddingHorizontal: 28, alignItems: 'center', marginTop: 30 },
   saveBtnTxt: { color: C.mintDark, fontSize: 16, fontWeight: '700', letterSpacing: 0.4 },
+
+  // Debug button (shown in footer in __DEV__ only)
+  debugBtn: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 20 },
+  debugBtnTxt: { color: C.dim, fontSize: 12, fontWeight: '600' },
 });
