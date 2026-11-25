@@ -786,17 +786,7 @@ function MainScreen() {
             <Text style={s.settingsBtnTxt}>⚙</Text>
           </PressScale>
         </View>
-        {/* In development builds the pill always opens the upgrade screen, so testers can reach the Pro switch */}
-        <PressScale
-          wrapStyle={s.pillWrap} style={[s.planPill, isPro && s.planPillPro]}
-          onPress={() => { if (!isPro || __DEV__) setIsUpgradeOpen(true); }}
-        >
-          <Text style={[s.planPillTxt, isPro && s.planPillProTxt]}>
-            {isPro
-              ? 'Pro · unlimited apps'
-              : `Free · ${monitoredApps.length} of ${FREE_APP_LIMIT} app used`}
-          </Text>
-        </PressScale>
+        {/* Subtitle only — v1 is 100% free with unlimited apps */}
       </FadeInUp>
 
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
@@ -866,58 +856,58 @@ function MainScreen() {
             {monitoredApps.map((app, index) => {
               const active = isAppActiveForPlan(index, isPro);
               return (
-              <FadeInUp key={app.packageName} delay={Math.min(index, 5) * 70} style={[s.card, !active && s.cardPaused]}>
-                <View style={s.cardTop}>
-                  <View style={s.iconTile}><AppIcon icon={app.icon} size={36} /></View>
-                  <View style={s.cardInfo}>
-                    <Text style={s.cardName} numberOfLines={1}>{app.appName}</Text>
-                    <View style={s.pillRow}>
-                      <View style={s.pill}>
-                        <Text style={s.pillTxt}>⏱  {fmtLimit(app.limitMinutes)} per day</Text>
-                      </View>
-                      {!active && (
-                        <View style={s.pausedPill}>
-                          <Text style={s.pausedPillTxt}>Paused · Pro needed</Text>
+                <FadeInUp key={app.packageName} delay={Math.min(index, 5) * 70} style={[s.card, !active && s.cardPaused]}>
+                  <View style={s.cardTop}>
+                    <View style={s.iconTile}><AppIcon icon={app.icon} size={36} /></View>
+                    <View style={s.cardInfo}>
+                      <Text style={s.cardName} numberOfLines={1}>{app.appName}</Text>
+                      <View style={s.pillRow}>
+                        <View style={s.pill}>
+                          <Text style={s.pillTxt}>⏱  {fmtLimit(app.limitMinutes)} per day</Text>
                         </View>
-                      )}
+                        {!active && (
+                          <View style={s.pausedPill}>
+                            <Text style={s.pausedPillTxt}>Paused · Pro needed</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <View style={s.cardActions}>
+                      <Pressable onPress={() => onEditApp(app)} style={s.editBtn} hitSlop={10}>
+                        <Text style={s.editTxt}>✎</Text>
+                      </Pressable>
+                      <Pressable onPress={() => onDelete(app)} style={s.delBtn} hitSlop={10}>
+                        <Text style={s.delTxt}>✕</Text>
+                      </Pressable>
                     </View>
                   </View>
-                  <View style={s.cardActions}>
-                    <Pressable onPress={() => onEditApp(app)} style={s.editBtn} hitSlop={10}>
-                      <Text style={s.editTxt}>✎</Text>
-                    </Pressable>
-                    <Pressable onPress={() => onDelete(app)} style={s.delBtn} hitSlop={10}>
-                      <Text style={s.delTxt}>✕</Text>
-                    </Pressable>
-                  </View>
-                </View>
 
-                {hasAccess ? (
-                  <View style={s.usageBox}>
-                    <View style={s.usageRow}>
-                      <Text style={s.usageLabel}>Used today</Text>
-                      <Text style={s.usageValue}>
-                        {fmtLimit(usage[app.packageName] || 0)} / {fmtLimit(app.limitMinutes)}
-                      </Text>
+                  {hasAccess ? (
+                    <View style={s.usageBox}>
+                      <View style={s.usageRow}>
+                        <Text style={s.usageLabel}>Used today</Text>
+                        <Text style={s.usageValue}>
+                          {fmtLimit(usage[app.packageName] || 0)} / {fmtLimit(app.limitMinutes)}
+                        </Text>
+                      </View>
+                      <ProgressBar value={(usage[app.packageName] || 0) / app.limitMinutes} />
                     </View>
-                    <ProgressBar value={(usage[app.packageName] || 0) / app.limitMinutes} />
-                  </View>
-                ) : null}
-
-                <View style={s.msgRow}>
-                  <View style={s.msgBar} />
-                  <Text style={s.cardMsg} numberOfLines={3}>{app.message}</Text>
-                  {app.photoUri ? (
-                    <Image source={{ uri: app.photoUri }} style={s.cardPhoto} />
                   ) : null}
-                </View>
 
-                {hasNativeNotify ? (
-                  <PressScale wrapStyle={s.stretch} style={s.testBtn} onPress={() => onTestReminder(app)}>
-                    <Text style={s.testBtnTxt}>🔔  Send test reminder</Text>
-                  </PressScale>
-                ) : null}
-              </FadeInUp>
+                  <View style={s.msgRow}>
+                    <View style={s.msgBar} />
+                    <Text style={s.cardMsg} numberOfLines={3}>{app.message}</Text>
+                    {app.photoUri ? (
+                      <Image source={{ uri: app.photoUri }} style={s.cardPhoto} />
+                    ) : null}
+                  </View>
+
+                  {hasNativeNotify ? (
+                    <PressScale wrapStyle={s.stretch} style={s.testBtn} onPress={() => onTestReminder(app)}>
+                      <Text style={s.testBtnTxt}>🔔  Send test reminder</Text>
+                    </PressScale>
+                  ) : null}
+                </FadeInUp>
               );
             })}
             <Text style={s.note}>
@@ -1218,22 +1208,12 @@ function MainScreen() {
             </View>
           </View>
 
-          <Text style={s.secLabel}>Plan</Text>
+          <Text style={s.secLabel}>About</Text>
           <View style={s.settingCard}>
-            <View style={s.settingRow}>
-              <View style={s.settingInfo}>
-                <Text style={s.settingTitle}>{isPro ? 'Pro plan' : 'Free plan'}</Text>
-                <Text style={s.settingSub}>
-                  {isPro ? 'Watch unlimited apps' : `Watch ${FREE_APP_LIMIT} app forever`}
-                </Text>
-              </View>
-              <PressScale
-                style={s.settingAction}
-                onPress={() => { setIsSettingsOpen(false); setIsUpgradeOpen(true); }}
-              >
-                <Text style={s.settingActionTxt}>{isPro ? 'View' : 'Upgrade'}</Text>
-              </PressScale>
-            </View>
+            <Text style={s.settingTitle}>100% Free · Unlimited Apps</Text>
+            <Text style={s.settingSub}>
+              Watch as many apps as you like with your own messages and photos. No ads and no payments.
+            </Text>
           </View>
 
           <Text style={s.secLabel}>Privacy</Text>

@@ -1,21 +1,13 @@
-// planLimits.js — All Free vs Pro rules live in one small file.
-// Why keep them here? So the rules are easy to read, test, and explain
-// without digging through screen code.
+// planLimits.js — Plan limits for App Time Notifier.
+// Version 1 is 100% free with unlimited apps, no ads, and no payments,
+// so people can try it without any friction and leave honest reviews.
 
-export const FREE_APP_LIMIT = 1;
+export const FREE_APP_LIMIT = Infinity;
 
-/**
- * Can the user add another app right now?
- */
-export function canAddApp(currentAppCount, isPro) {
-  return isPro || currentAppCount < FREE_APP_LIMIT;
+export function canAddApp() {
+  return true;
 }
 
-/**
- * Should the app at this position in the list be actively watched?
- * Why: if Pro expires or is turned off, we NEVER delete the user's extra apps.
- * We keep them saved and simply pause any app beyond FREE_APP_LIMIT.
- */
-export function isAppActiveForPlan(index, isPro) {
-  return isPro || index < FREE_APP_LIMIT;
+export function isAppActiveForPlan() {
+  return true;
 }
