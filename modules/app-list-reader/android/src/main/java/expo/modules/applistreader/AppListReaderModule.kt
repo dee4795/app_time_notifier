@@ -151,29 +151,47 @@ class AppListReaderModule : Module() {
     }
   }
 
+  // Opens a photo from any source React Native gives us:
+  // - file:// or content:// (from the photo picker or debug Metro)
+  // - android.resource://, asset://, or a bare drawable name (from a release build)
+  private fun openPhotoStream(c: Context, sourceUri: String): java.io.InputStream? {
+    if (sourceUri.startsWith("file:///android_asset/")) {
+      return c.assets.open(sourceUri.removePrefix("file:///android_asset/"))
+    }
+    if (sourceUri.startsWith("asset://")) {
+      return c.assets.open(sourceUri.removePrefix("asset://"))
+    }
+    if (!sourceUri.contains("://")) {
+      // Release builds often give a bare Android drawable name like "assets_democutecat"
+      val resId = c.resources.getIdentifier(sourceUri, "drawable", c.packageName)
+        .takeIf { it != 0 }
+        ?: c.resources.getIdentifier(sourceUri, "raw", c.packageName)
+      if (resId != 0) return c.resources.openRawResource(resId)
+    }
+    return c.contentResolver.openInputStream(Uri.parse(sourceUri))
+  }
+
   // ── Save a photo for the reminder ──
   // The picker gives us a temporary picture. We make our own copy in the app's
   // private folder, so it stays as long as the app is installed. While copying
   // we also make it smaller (big photos waste memory) and turn it upright.
   private fun savePhoto(sourceUri: String): String {
     val c = ctx ?: throw IllegalStateException("No Android context")
-    val resolver = c.contentResolver
-    val uri = Uri.parse(sourceUri)
 
     // Step 1: read only the picture size (cheap)
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    openPhotoStream(c, sourceUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
 
     // Step 2: decode a smaller copy, at most about 1600 pixels wide or tall
     var sample = 1
     while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
-    val decoded = resolver.openInputStream(uri)?.use {
+    val decoded = openPhotoStream(c, sourceUri)?.use {
       BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
-    } ?: throw IllegalStateException("Could not read the photo")
+    } ?: throw IllegalStateException("Could not read the photo: $sourceUri")
 
     // Step 3: some photos are saved sideways with a "please rotate" note inside
     val orientation = try {
-      resolver.openInputStream(uri)?.use {
+      openPhotoStream(c, sourceUri)?.use {
         ExifInterface(it).getAttributeInt(
           ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
         )

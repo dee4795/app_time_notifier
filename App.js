@@ -672,8 +672,14 @@ function MainScreen() {
   const onUseSamplePhoto = async (sampleSource) => {
     try {
       const asset = Asset.fromModule(sampleSource);
-      await asset.downloadAsync();                 // makes sure a real file exists on the phone
-      const saved = await nativeModule.savePhoto(asset.localUri || asset.uri);
+      try {
+        await asset.downloadAsync();               // works in debug builds (downloads from Metro)
+      } catch (_) {
+        // In release builds, bundled assets live inside Android resources instead
+      }
+      const resolved = Image.resolveAssetSource(sampleSource);
+      const uri = asset.localUri || asset.uri || (resolved && resolved.uri);
+      const saved = await nativeModule.savePhoto(uri);
       if (photoUri && photoUri !== originalPhotoUri) deleteFileQuietly(photoUri);
       setPhotoUri(saved);
     } catch (e) {
