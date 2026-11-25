@@ -72,7 +72,7 @@ const MESSAGE_IDEAS = [
 const SAMPLE_PHOTOS = [
   { id: 'cat', label: 'Cheeky cat', source: require('./assets/demo-cute-cat.png') },
   { id: 'dog', label: 'Happy puppy', source: require('./assets/demo-happy-dog.jpg') },
-  { id: 'nature', label: 'Calm nature', source: require('./assets/demo-calm-nature.jpg') },
+  { id: 'panda', label: 'Cute panda', source: require('./assets/demo-cute-panda.jpg') },
   { id: 'tea', label: 'Tea break', source: require('./assets/demo-tea-break.jpg') },
 ];
 
