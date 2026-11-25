@@ -421,7 +421,9 @@ function MainScreen() {
       // Show the battery tip until the user has tapped "Got it" once
       const hint = await AsyncStorage.getItem(BATTERY_HINT_KEY);
       setBatteryHintDone(hint === 'done');
-      setIsPro((await AsyncStorage.getItem(PRO_KEY)) === 'yes');
+      // Only honor the dev-only Pro test switch in development builds (__DEV__).
+      // Real Google Play Billing entitlement will be added in M7.
+      setIsPro(__DEV__ && (await AsyncStorage.getItem(PRO_KEY)) === 'yes');
     } catch (e) { console.error(e); }
     finally { setLoaded(true); }
   };
