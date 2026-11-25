@@ -68,8 +68,13 @@ const MESSAGE_IDEAS = [
   'Time for a break. Rest your eyes, stretch your body and drink some water.',
 ];
 
-// A funny, cute sample picture, so people can try the reminder without choosing their own photo
-const DEMO_IMAGE = require('./assets/demo-cute-cat.png');
+// Sample pictures so people can try the reminder without choosing their own photo
+const SAMPLE_PHOTOS = [
+  { id: 'cat', label: 'Cheeky cat', source: require('./assets/demo-cute-cat.png') },
+  { id: 'dog', label: 'Happy puppy', source: require('./assets/demo-happy-dog.jpg') },
+  { id: 'nature', label: 'Calm nature', source: require('./assets/demo-calm-nature.jpg') },
+  { id: 'tea', label: 'Tea break', source: require('./assets/demo-tea-break.jpg') },
+];
 
 const STORAGE_KEY = 'monitored_apps_v1';
 const BATTERY_HINT_KEY = 'battery_hint_v1';
@@ -611,7 +616,8 @@ function MainScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
+        // allowsEditing: false skips the confusing crop window, so tapping a photo selects it right away
+        allowsEditing: false,
         quality: 0.8,
       });
       if (result.canceled) return;
@@ -626,11 +632,11 @@ function MainScreen() {
     }
   };
 
-  // ── Use the sample picture as the reminder photo ──
+  // ── Use a sample picture as the reminder photo ──
   // Same path as a picked photo: our Kotlin code makes the private copy.
-  const onUseSamplePhoto = async () => {
+  const onUseSamplePhoto = async (sampleSource) => {
     try {
-      const asset = Asset.fromModule(DEMO_IMAGE);
+      const asset = Asset.fromModule(sampleSource);
       await asset.downloadAsync();                 // makes sure a real file exists on the phone
       const saved = await nativeModule.savePhoto(asset.localUri || asset.uri);
       deleteFileQuietly(photoUri);                 // remove the previous photo, if any
@@ -1005,14 +1011,21 @@ function MainScreen() {
                 <Text style={s.photoAddTxt}>Choose a photo</Text>
               </PressScale>
 
-              {/* Sample picture: tap to use it as the photo */}
-              <PressScale wrapStyle={s.stretch} style={s.demoCard} onPress={onUseSamplePhoto}>
-                <Image source={DEMO_IMAGE} style={s.demoThumb} />
-                <View style={s.demoText}>
-                  <Text style={s.demoTitle}>Or try a sample picture</Text>
-                  <Text style={s.demoHint}>Tap to use this cheeky cat as your photo</Text>
-                </View>
-              </PressScale>
+              {/* Sample pictures: tap any one to use it as the photo */}
+              <Text style={s.demoSectionTitle}>Or try a sample picture</Text>
+              <View style={s.demoGrid}>
+                {SAMPLE_PHOTOS.map((sample) => (
+                  <PressScale
+                    key={sample.id}
+                    wrapStyle={s.demoGridItem}
+                    style={s.demoTile}
+                    onPress={() => onUseSamplePhoto(sample.source)}
+                  >
+                    <Image source={sample.source} style={s.demoThumb} />
+                    <Text style={s.demoTileLabel} numberOfLines={1}>{sample.label}</Text>
+                  </PressScale>
+                ))}
+              </View>
             </>
           )}
 
@@ -1194,11 +1207,12 @@ const s = StyleSheet.create({
   photoAddEmoji: { fontSize: 30 },
   photoAddTxt: { color: C.dim, fontSize: 14 },
   photoWrap: { borderRadius: 20, overflow: 'hidden', backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
-  demoCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 12, marginTop: 12 },
-  demoThumb: { width: 64, height: 64, borderRadius: 14 },
-  demoText: { flex: 1, marginLeft: 14 },
-  demoTitle: { color: C.text, fontSize: 14, fontWeight: '700' },
-  demoHint: { color: C.dim, fontSize: 12, marginTop: 2 },
+  demoSectionTitle: { color: C.dim, fontSize: 13, marginTop: 16, marginBottom: 10 },
+  demoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  demoGridItem: { width: '48%' },
+  demoTile: { backgroundColor: C.surface, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 10, alignItems: 'center' },
+  demoThumb: { width: '100%', height: 100, borderRadius: 12 },
+  demoTileLabel: { color: C.text, fontSize: 13, fontWeight: '600', marginTop: 8 },
   photoPreview: { width: '100%', height: 220 },
   photoBtns: { position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', gap: 10 },
   photoBtn: { borderRadius: 20, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: 'rgba(15,28,36,0.8)', borderWidth: 1 },
