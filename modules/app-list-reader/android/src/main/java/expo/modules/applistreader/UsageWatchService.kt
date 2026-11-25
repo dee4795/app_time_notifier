@@ -102,11 +102,12 @@ class UsageWatchService : Service() {
 
     for (item in items) {
       val used = usage[item.packageName] ?: 0
-      val alreadySentToday = NotifierStore.lastNotifiedDay(this, item.packageName) == today
+      val alreadySentToday =
+        NotifierStore.lastNotifiedDay(this, item.packageName, item.limitMinutes) == today
       if (used >= item.limitMinutes && !alreadySentToday) {
         // Only remember "sent" if the notification was really shown
         if (ReminderNotifier.showReminder(this, item, isTest = false)) {
-          NotifierStore.markNotified(this, item.packageName, today)
+          NotifierStore.markNotified(this, item.packageName, item.limitMinutes, today)
         }
       }
     }

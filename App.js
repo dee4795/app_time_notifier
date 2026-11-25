@@ -38,6 +38,7 @@ import { Asset } from 'expo-asset';
 // Why this library: the built-in SafeAreaView does nothing on Android.
 // This one gives us the real size of the notch / status bar / nav bar.
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FREE_APP_LIMIT, canAddApp, isAppActiveForPlan } from './planLimits';
 
 // ── Load our native module that reads ALL installed apps from Android ──
 let nativeModule = null;
@@ -77,9 +78,8 @@ const SAMPLE_PHOTOS = [
 ];
 
 const STORAGE_KEY = 'monitored_apps_v1';
-const BATTERY_HINT_KEY = 'battery_hint_v1';
-const PRO_KEY = 'is_pro_v1';       // "yes" when Pro is on (real payment comes later)
-const FREE_APP_LIMIT = 1;          // the free plan watches this many apps   // saved once the user taps "Got it"
+const BATTERY_HINT_KEY = 'battery_hint_v1';   // saved once the user taps "Got it"
+const PRO_KEY = 'is_pro_v1';                  // "yes" when Pro is on (real payment comes later)
 
 // ── Calm colour palette (all colours live here, so changing the look is easy) ──
 const C = {
@@ -405,6 +405,9 @@ function MainScreen() {
   const [batteryHintDone, setBatteryHintDone] = useState(true);  // true = do not show the battery tip
   const [isPro, setIsPro] = useState(false);                      // free plan until Pro is bought
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+  // Editing an existing app vs adding a new one
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalPhotoUri, setOriginalPhotoUri] = useState(null);
   // Debug panel — only used in development builds (__DEV__)
   const [isDebugOpen, setIsDebugOpen] = useState(false);
 
@@ -468,7 +471,10 @@ function MainScreen() {
   useEffect(() => {
     if (!hasNativeNotify || !loaded || hasAccess === null) return;
     try {
-      const items = monitoredApps.map(a => ({
+      // Only send apps allowed by the current plan.
+      // Extra apps stay saved on the screen as "Paused" and are never deleted.
+      const activeApps = monitoredApps.filter((_, index) => isAppActiveForPlan(index, isPro));
+      const items = activeApps.map(a => ({
         appName: a.appName,
         packageName: a.packageName,
         limitMinutes: a.limitMinutes,
@@ -477,13 +483,13 @@ function MainScreen() {
       }));
       // index.ts turns the list into text by itself, so we pass the list as it is
       nativeModule.saveWatchList(items);
-      console.log('[watch] saved', items.length, 'app(s); usage access =', hasAccess);
+      console.log('[watch] saved', items.length, 'active app(s); usage access =', hasAccess);
       if (items.length > 0 && hasAccess) nativeModule.startWatching();
       else nativeModule.stopWatching();
     } catch (e) {
       console.warn('Watcher sync failed:', e);
     }
-  }, [monitoredApps, hasAccess, loaded]);
+  }, [monitoredApps, hasAccess, loaded, isPro]);
 
   // ── Notification permission (Android 13 and newer shows its own pop-up) ──
   const askNotifPermission = async () => {
@@ -528,7 +534,7 @@ function MainScreen() {
 
   // ── Free plan: the free version watches only FREE_APP_LIMIT apps ──
   const onAddPressed = () => {
-    if (!isPro && monitoredApps.length >= FREE_APP_LIMIT) {
+    if (!canAddApp(monitoredApps.length, isPro)) {
       setIsUpgradeOpen(true);   // show the upgrade screen instead of the app list
       return;
     }
@@ -601,12 +607,39 @@ function MainScreen() {
       return;
     }
     setSelectedApp(app);
+    setIsEditing(false);
+    setOriginalPhotoUri(null);
     setIsPickerOpen(false);
     setLimitHours('0');
     setLimitMins('30');
     setMessage('');
     setPhotoUri(null);
     setIsLimitOpen(true);
+  };
+
+  // ── Edit an existing app card ──
+  const onEditApp = (app) => {
+    setSelectedApp(app);
+    setIsEditing(true);
+    setOriginalPhotoUri(app.photoUri || null);
+    setLimitHours(String(Math.floor(app.limitMinutes / 60)));
+    setLimitMins(String(app.limitMinutes % 60));
+    setMessage(app.message || '');
+    setPhotoUri(app.photoUri || null);
+    setIsLimitOpen(true);
+  };
+
+  // Close the Add/Edit modal without saving.
+  // Only delete a photo if it is a NEW unsaved photo (not the app's original saved photo).
+  const closeLimitModal = () => {
+    if (photoUri && photoUri !== originalPhotoUri) {
+      deleteFileQuietly(photoUri);
+    }
+    setPhotoUri(null);
+    setOriginalPhotoUri(null);
+    setSelectedApp(null);
+    setIsEditing(false);
+    setIsLimitOpen(false);
   };
 
   // ── Pick a photo and keep a private copy inside the app ──
@@ -624,7 +657,8 @@ function MainScreen() {
 
       // Our Kotlin code makes the private, smaller copy and gives us its address
       const saved = await nativeModule.savePhoto(result.assets[0].uri);
-      deleteFileQuietly(photoUri); // remove the previous copy, if there was one
+      // Only delete the previous photo if it is not the original saved photo (in case user cancels Edit)
+      if (photoUri && photoUri !== originalPhotoUri) deleteFileQuietly(photoUri);
       setPhotoUri(saved);
     } catch (e) {
       console.warn('Photo pick failed:', e);
@@ -639,7 +673,7 @@ function MainScreen() {
       const asset = Asset.fromModule(sampleSource);
       await asset.downloadAsync();                 // makes sure a real file exists on the phone
       const saved = await nativeModule.savePhoto(asset.localUri || asset.uri);
-      deleteFileQuietly(photoUri);                 // remove the previous photo, if any
+      if (photoUri && photoUri !== originalPhotoUri) deleteFileQuietly(photoUri);
       setPhotoUri(saved);
     } catch (e) {
       console.warn('Sample photo failed:', e);
@@ -675,11 +709,22 @@ function MainScreen() {
       message: message.trim(),
       photoUri: photoUri,
     };
-    const updated = [...monitoredApps, entry];
+
+    // If editing, delete the old photo only if it was changed or removed
+    if (isEditing && originalPhotoUri && originalPhotoUri !== photoUri) {
+      deleteFileQuietly(originalPhotoUri);
+    }
+
+    const updated = isEditing
+      ? monitoredApps.map(a => a.packageName === entry.packageName ? entry : a)
+      : [...monitoredApps, entry];
+
     setMonitoredApps(updated);
     await saveAll(updated);
     setIsLimitOpen(false);
     setSelectedApp(null);
+    setOriginalPhotoUri(null);
+    setIsEditing(false);
     refreshUsage(updated);
     // Ask for notification permission (Android shows its own pop-up if needed)
     if (hasNativeNotify) await askNotifPermission();
@@ -802,19 +847,33 @@ function MainScreen() {
             <Text style={s.sectionLabel}>
               {monitoredApps.length === 1 ? '1 app watched' : `${monitoredApps.length} apps watched`}
             </Text>
-            {monitoredApps.map((app, index) => (
-              <FadeInUp key={app.packageName} delay={Math.min(index, 5) * 70} style={s.card}>
+            {monitoredApps.map((app, index) => {
+              const active = isAppActiveForPlan(index, isPro);
+              return (
+              <FadeInUp key={app.packageName} delay={Math.min(index, 5) * 70} style={[s.card, !active && s.cardPaused]}>
                 <View style={s.cardTop}>
                   <View style={s.iconTile}><AppIcon icon={app.icon} size={36} /></View>
                   <View style={s.cardInfo}>
                     <Text style={s.cardName} numberOfLines={1}>{app.appName}</Text>
-                    <View style={s.pill}>
-                      <Text style={s.pillTxt}>⏱  {fmtLimit(app.limitMinutes)} per day</Text>
+                    <View style={s.pillRow}>
+                      <View style={s.pill}>
+                        <Text style={s.pillTxt}>⏱  {fmtLimit(app.limitMinutes)} per day</Text>
+                      </View>
+                      {!active && (
+                        <View style={s.pausedPill}>
+                          <Text style={s.pausedPillTxt}>Paused · Pro needed</Text>
+                        </View>
+                      )}
                     </View>
                   </View>
-                  <Pressable onPress={() => onDelete(app)} style={s.delBtn} hitSlop={10}>
-                    <Text style={s.delTxt}>✕</Text>
-                  </Pressable>
+                  <View style={s.cardActions}>
+                    <Pressable onPress={() => onEditApp(app)} style={s.editBtn} hitSlop={10}>
+                      <Text style={s.editTxt}>✎</Text>
+                    </Pressable>
+                    <Pressable onPress={() => onDelete(app)} style={s.delBtn} hitSlop={10}>
+                      <Text style={s.delTxt}>✕</Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 {hasAccess ? (
@@ -843,7 +902,8 @@ function MainScreen() {
                   </PressScale>
                 ) : null}
               </FadeInUp>
-            ))}
+              );
+            })}
             <Text style={s.note}>
               While watching, Android shows a small "Watching your app limits" notice.
               That is how it lets us check your usage in the background.
@@ -908,7 +968,7 @@ function MainScreen() {
 
       {/* ══════════ TIME LIMIT + MESSAGE + PHOTO ══════════ */}
       <ModalShell
-        visible={isLimitOpen} onClose={() => { deleteFileQuietly(photoUri); setPhotoUri(null); setIsLimitOpen(false); }}
+        visible={isLimitOpen} onClose={closeLimitModal}
         title={selectedApp ? selectedApp.appName : ''}
         left={selectedApp ? <View style={s.hdrIcon}><AppIcon icon={selectedApp.icon} size={30} /></View> : null}
       >
@@ -998,7 +1058,10 @@ function MainScreen() {
                 </PressScale>
                 <PressScale
                   style={[s.photoBtn, s.photoBtnRemove]}
-                  onPress={() => { deleteFileQuietly(photoUri); setPhotoUri(null); }}
+                  onPress={() => {
+                    if (photoUri && photoUri !== originalPhotoUri) deleteFileQuietly(photoUri);
+                    setPhotoUri(null);
+                  }}
                 >
                   <Text style={s.photoBtnRemoveTxt}>✕  Remove</Text>
                 </PressScale>
@@ -1136,12 +1199,19 @@ const s = StyleSheet.create({
   // Cards
   sectionLabel: { color: C.dim, fontSize: 13, letterSpacing: 0.6, marginBottom: 12, marginLeft: 4 },
   card: { backgroundColor: C.surface, borderRadius: 22, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: C.border },
+  cardPaused: { opacity: 0.65 },
   cardTop: { flexDirection: 'row', alignItems: 'center' },
   iconTile: { width: 56, height: 56, borderRadius: 16, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
   cardInfo: { flex: 1 },
   cardName: { fontSize: 17, color: C.text, fontWeight: '600' },
-  pill: { alignSelf: 'flex-start', backgroundColor: C.mintTint, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  pill: { alignSelf: 'flex-start', backgroundColor: C.mintTint, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   pillTxt: { color: C.mint, fontSize: 12, fontWeight: '600' },
+  pausedPill: { alignSelf: 'flex-start', backgroundColor: C.surface2, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: C.softRed },
+  pausedPillTxt: { color: C.softRed, fontSize: 11, fontWeight: '600' },
+  cardActions: { flexDirection: 'row', gap: 8 },
+  editBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center' },
+  editTxt: { color: C.mint, fontSize: 14, fontWeight: '700' },
   delBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.surface2, alignItems: 'center', justifyContent: 'center' },
   delTxt: { color: C.softRed, fontSize: 13, fontWeight: '700' },
 

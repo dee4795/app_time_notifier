@@ -117,8 +117,11 @@ object ReminderNotifier {
     }
 
     val manager = context.getSystemService(NotificationManager::class.java)
-    // Same app = same notification number, so a new reminder replaces the old one
-    manager.notify(item.packageName.hashCode(), builder.build())
+    val id = item.packageName.hashCode()
+    // Cancel any older notification for this app first so Android pops up and rings
+    // again when a new reminder level is reached (even if the user didn't swipe the old one).
+    manager.cancel(id)
+    manager.notify(id, builder.build())
     return true
   }
 }

@@ -250,3 +250,41 @@ This document tracks everything built in each milestone, explaining how it works
 #### Q3: Why use `Locale.US` when formatting the date in `todayKey()`?
 > **Answer:** `SimpleDateFormat` uses the phone's current locale by default. Some locales use different digit systems (e.g., Arabic uses ٠١٢٣ instead of 0123) or different calendars. If the date format changes, the daily reset logic breaks — a reminder might fire twice or not at all. By forcing `Locale.US`, we always get a consistent `"yyyy-MM-dd"` string regardless of the user's phone language.
 
+---
+
+## Milestone M6: Free vs Pro Gating, Edit Rule, and Limit-Change Fix
+
+### What We Built
+
+1. **Centralized Free/Pro rules** ([planLimits.js](file:///d:/dev/focus-reminder/planLimits.js)):
+   - Created `FREE_APP_LIMIT = 1`, `canAddApp(count, isPro)`, and `isAppActiveForPlan(index, isPro)`.
+   - Free users can watch 1 app. Pro users can watch unlimited apps.
+   - If Pro turns off when a user has 2+ apps, extra apps are **never deleted** — they stay saved on the screen as **"Paused · Pro needed"** and are filtered out before sending to the background service.
+
+2. **Edit button (`✎`) on each app card** (`App.js`):
+   - Users can tap `✎` to change the time limit, message, or photo of an existing app without deleting and re-adding it.
+   - If the user taps Cancel (`✕`), the original saved photo is kept safe and only newly-picked unsaved photos are deleted.
+
+3. **Extending time limit fix** (`NotifierStore.kt` & `UsageWatchService.kt`):
+   - Changed the notification key from `notified_<packageName>` to `notified_<packageName>_<limitMinutes>`.
+   - Now, if a user extends their time limit after a reminder already fired today (e.g., `1 min` → `2 min`), the new limit can still fire today.
+   - Added `manager.cancel(id)` in `ReminderNotifier.kt` so Android shows the new notification fresh even if the older one is still in the notification bar.
+
+### How It Works (Simple Explanation)
+
+- **Gating helper (`planLimits.js`)**: Instead of scattering `if (!isPro && ...)` checks everywhere in the UI, we keep the business rules in one small file. That makes it easy to test, change, and explain.
+- **Soft-pausing instead of deleting**: Deleting a user's saved rules if a subscription expires is a bad user experience. By filtering with `isAppActiveForPlan(index, isPro)` before syncing to `saveWatchList`, we keep all data safe and only watch what the current plan allows.
+- **Keying notifications by `packageName` + `limitMinutes`**: Storing the limit inside the `SharedPreferences` key means changing the limit creates a fresh key for today, solving the "extended limit didn't notify" bug cleanly.
+
+### Interview Questions & Answers
+
+#### Q1: Why did you put the Free/Pro rules in a separate `planLimits.js` file?
+> **Answer:** Putting business rules in a small, pure JavaScript module separates them from the UI code. It makes the rules easy to read, unit-test, and reuse across screens without duplicating `if` statements.
+
+#### Q2: What happens if a Pro user downgrades to Free while having 3 monitored apps?
+> **Answer:** We never delete user data. The 2nd and 3rd apps remain saved in `AsyncStorage` and appear on the Home screen with a "Paused · Pro needed" badge. Before syncing to the native background service, we filter with `isAppActiveForPlan(index, isPro)` so only the first app is actively monitored.
+
+#### Q3: How did you fix the bug where extending a time limit didn't send a second reminder?
+> **Answer:** Previously we stored `notified_<packageName>` in `SharedPreferences`, so any edit to the limit on the same day was ignored. By changing the key to `notified_<packageName>_<limitMinutes>`, extending a limit (e.g., 1 min to 2 min) checks a new key and fires properly, while still preventing duplicate reminders for the same limit on the same day.
+
+

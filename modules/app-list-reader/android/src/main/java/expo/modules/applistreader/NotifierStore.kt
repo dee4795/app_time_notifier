@@ -49,13 +49,15 @@ object NotifierStore {
     }
   }
 
-  // "2026-11-01" — used to send only ONE reminder per app per day
+  // "2026-11-01" — used to send only ONE reminder per app + limit per day.
+  // Including limitMinutes means if the user extends or edits the time limit
+  // (for example 1 min -> 2 min), the new limit can still fire today.
   fun todayKey(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
-  fun lastNotifiedDay(context: Context, packageName: String): String? =
-    prefs(context).getString("notified_$packageName", null)
+  fun lastNotifiedDay(context: Context, packageName: String, limitMinutes: Int): String? =
+    prefs(context).getString("notified_${packageName}_$limitMinutes", null)
 
-  fun markNotified(context: Context, packageName: String, day: String) {
-    prefs(context).edit().putString("notified_$packageName", day).apply()
+  fun markNotified(context: Context, packageName: String, limitMinutes: Int, day: String) {
+    prefs(context).edit().putString("notified_${packageName}_$limitMinutes", day).apply()
   }
 }
