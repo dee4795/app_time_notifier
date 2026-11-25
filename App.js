@@ -405,6 +405,7 @@ function MainScreen() {
   const [batteryHintDone, setBatteryHintDone] = useState(true);  // true = do not show the battery tip
   const [isPro, setIsPro] = useState(false);                      // free plan until Pro is bought
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Editing an existing app vs adding a new one
   const [isEditing, setIsEditing] = useState(false);
   const [originalPhotoUri, setOriginalPhotoUri] = useState(null);
@@ -768,8 +769,15 @@ function MainScreen() {
 
       {/* ── Header: padded by the notch / status bar height ── */}
       <FadeInUp style={[s.header, { paddingTop: insets.top + 18 }]}>
-        <Text style={s.title}>App Time Notifier</Text>
-        <Text style={s.subtitle}>Gentle reminders, right when you need them</Text>
+        <View style={s.headerRow}>
+          <View style={s.headerTextWrap}>
+            <Text style={s.title}>App Time Notifier</Text>
+            <Text style={s.subtitle}>Gentle reminders, right when you need them</Text>
+          </View>
+          <PressScale style={s.settingsBtn} onPress={() => setIsSettingsOpen(true)}>
+            <Text style={s.settingsBtnTxt}>⚙</Text>
+          </PressScale>
+        </View>
         {/* In development builds the pill always opens the upgrade screen, so testers can reach the Pro switch */}
         <PressScale
           wrapStyle={s.pillWrap} style={[s.planPill, isPro && s.planPillPro]}
@@ -1152,6 +1160,86 @@ function MainScreen() {
         </ScrollView>
       </ModalShell>
 
+      {/* ══════════ SETTINGS ══════════ */}
+      <ModalShell visible={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title="Settings">
+        <ScrollView style={s.limitScroll} contentContainerStyle={{ paddingBottom: 36 }}>
+          <Text style={s.secLabel}>Permissions &amp; Reliability</Text>
+
+          <View style={s.settingCard}>
+            <View style={s.settingRow}>
+              <View style={s.settingInfo}>
+                <Text style={s.settingTitle}>Usage access</Text>
+                <Text style={s.settingSub}>
+                  {hasAccess ? 'Allowed · reading today\'s screen time' : 'Off · needed to count app time'}
+                </Text>
+              </View>
+              <PressScale
+                style={s.settingAction}
+                onPress={() => { setIsSettingsOpen(false); setIsAccessOpen(true); }}
+              >
+                <Text style={s.settingActionTxt}>{hasAccess ? 'Check' : 'Turn on'}</Text>
+              </PressScale>
+            </View>
+          </View>
+
+          <View style={s.settingCard}>
+            <View style={s.settingRow}>
+              <View style={s.settingInfo}>
+                <Text style={s.settingTitle}>Notifications</Text>
+                <Text style={s.settingSub}>
+                  {notifOk === false ? 'Off · needed to show reminders' : 'Allowed'}
+                </Text>
+              </View>
+              <PressScale style={s.settingAction} onPress={() => Linking.openSettings()}>
+                <Text style={s.settingActionTxt}>App settings</Text>
+              </PressScale>
+            </View>
+          </View>
+
+          <View style={s.settingCard}>
+            <View style={s.settingRow}>
+              <View style={s.settingInfo}>
+                <Text style={s.settingTitle}>Battery settings</Text>
+                <Text style={s.settingSub}>
+                  Set to "Don't optimize" or "Unrestricted" so background reminders are never stopped.
+                </Text>
+              </View>
+              <PressScale style={s.settingAction} onPress={openBatterySettings}>
+                <Text style={s.settingActionTxt}>Open</Text>
+              </PressScale>
+            </View>
+          </View>
+
+          <Text style={s.secLabel}>Plan</Text>
+          <View style={s.settingCard}>
+            <View style={s.settingRow}>
+              <View style={s.settingInfo}>
+                <Text style={s.settingTitle}>{isPro ? 'Pro plan' : 'Free plan'}</Text>
+                <Text style={s.settingSub}>
+                  {isPro ? 'Watch unlimited apps' : `Watch ${FREE_APP_LIMIT} app forever`}
+                </Text>
+              </View>
+              <PressScale
+                style={s.settingAction}
+                onPress={() => { setIsSettingsOpen(false); setIsUpgradeOpen(true); }}
+              >
+                <Text style={s.settingActionTxt}>{isPro ? 'View' : 'Upgrade'}</Text>
+              </PressScale>
+            </View>
+          </View>
+
+          <Text style={s.secLabel}>Privacy</Text>
+          <View style={s.settingCard}>
+            <Text style={s.settingSub}>
+              All usage numbers, messages, and photos stay on your phone. App Time Notifier has no
+              server, no account, and no ads.
+            </Text>
+          </View>
+
+          <Text style={s.versionTxt}>App Time Notifier · Version 1.0.0</Text>
+        </ScrollView>
+      </ModalShell>
+
       {/* ══════════ DEBUG PANEL (dev builds only) ══════════ */}
       {__DEV__ && (
         <DebugPanel
@@ -1183,6 +1271,10 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   // Header
   header: { paddingHorizontal: 24, paddingBottom: 12 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  headerTextWrap: { flex: 1 },
+  settingsBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  settingsBtnTxt: { color: C.text, fontSize: 18 },
   title: { fontSize: 28, fontWeight: '700', color: C.text, letterSpacing: 0.3 },
   subtitle: { fontSize: 14, color: C.dim, marginTop: 6 },
 
@@ -1343,4 +1435,14 @@ const s = StyleSheet.create({
   // Debug button (shown in footer in __DEV__ only)
   debugBtn: { alignSelf: 'center', marginTop: 10, paddingVertical: 8, paddingHorizontal: 20 },
   debugBtnTxt: { color: C.dim, fontSize: 12, fontWeight: '600' },
+
+  // Settings modal
+  settingCard: { backgroundColor: C.surface, borderRadius: 16, padding: 14, marginTop: 10, borderWidth: 1, borderColor: C.border },
+  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  settingInfo: { flex: 1 },
+  settingTitle: { color: C.text, fontSize: 15, fontWeight: '600' },
+  settingSub: { color: C.dim, fontSize: 13, lineHeight: 19, marginTop: 3 },
+  settingAction: { backgroundColor: C.mintTint, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: C.mint },
+  settingActionTxt: { color: C.mint, fontSize: 13, fontWeight: '700' },
+  versionTxt: { color: C.dim, fontSize: 12, textAlign: 'center', marginTop: 26, opacity: 0.7 },
 });

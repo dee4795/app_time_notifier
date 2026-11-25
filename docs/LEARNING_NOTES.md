@@ -287,4 +287,38 @@ This document tracks everything built in each milestone, explaining how it works
 #### Q3: How did you fix the bug where extending a time limit didn't send a second reminder?
 > **Answer:** Previously we stored `notified_<packageName>` in `SharedPreferences`, so any edit to the limit on the same day was ignored. By changing the key to `notified_<packageName>_<limitMinutes>`, extending a limit (e.g., 1 min to 2 min) checks a new key and fires properly, while still preventing duplicate reminders for the same limit on the same day.
 
+---
+
+## Milestone M8: Polish, Settings Screen, Privacy Policy, and Release Build
+
+### What We Built
+
+1. **Settings screen** (`App.js`):
+   - Added a **⚙** button in the top header.
+   - Inside Settings, users can check **Usage access**, **Notifications**, **Battery optimization settings**, their **Plan**, and a **Privacy** summary.
+
+2. **Privacy Policy page** ([privacy-policy.html](file:///d:/dev/focus-reminder/docs/privacy-policy.html)):
+   - Created a clean HTML page ready to host on GitHub Pages for Google Play Console.
+   - Clearly explains that all usage data, messages, and photos stay on the phone, with no server and no ads.
+
+3. **Play Store listing draft** ([STORE_LISTING.md](file:///d:/dev/focus-reminder/docs/STORE_LISTING.md)):
+   - Wrote the App Name, Short Description (under 80 chars), and Full Description with honest, calm wording (no medical claims).
+
+### How It Works (Simple Explanation)
+
+- **Why a Privacy Policy URL is needed:** Google Play requires every app (especially ones with sensitive permissions like Usage access) to link to a public Privacy Policy page. Hosting a single HTML file on GitHub Pages is completely free.
+- **Release build vs Debug build:** In a debug build, the app connects to Metro on your laptop and `__DEV__` is `true` (so Debug and test-Pro buttons appear). In a release build (`--variant release`), JavaScript is bundled inside the app, R8 shrinks/optimizes Kotlin code, and `__DEV__` becomes `false` so all test buttons disappear automatically.
+
+### Interview Questions & Answers
+
+#### Q1: What happens in a release build compared to a debug build in React Native / Expo?
+> **Answer:** In a debug build, JavaScript is served from the Metro bundler over USB/Wi-Fi and `__DEV__` is `true`. In a release build, all JavaScript is compiled into a bundle inside the APK/AAB, `__DEV__` is `false` (so dev-only tools are stripped out), and Android's R8 tool shrinks and obfuscates native code. Always testing a release build on a real phone before publishing ensures R8 didn't accidentally remove native module classes.
+
+#### Q2: Why does Google Play require a Privacy Policy even if the app has no backend server?
+> **Answer:** Even when data never leaves the phone, Google Play requires a public Privacy Policy whenever an app accesses sensitive permissions (like `PACKAGE_USAGE_STATS` or photos) or uses Google Play Billing. It tells users clearly what data is read on the device and confirms it is never uploaded or shared.
+
+#### Q3: How do you handle battery optimization issues on Android phones?
+> **Answer:** Many Android phone makers aggressively kill background services to save battery. We cannot force-disable battery optimization without special Play Store approval, so instead we provide a helpful card and a Settings shortcut (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`) that takes the user directly to Android's battery page so they can set the app to "Unrestricted".
+
+
 
